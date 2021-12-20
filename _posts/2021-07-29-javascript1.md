@@ -1,3 +1,11 @@
+---
+layout: single
+tags: 
+ - javascript
+title: "[javascript] wecode 사전스터디 week1"
+---
+
+
 ## 01. console.log
 
 `console.log`는 괄호 안의 메세지를 콘솔창에 출력하는 명령어
