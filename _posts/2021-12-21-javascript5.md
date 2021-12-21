@@ -1,3 +1,16 @@
+---
+layout: single
+tags: 
+ - javascript
+
+toc: true
+toc_sticky: true
+
+title: "[javascript] 문법 학습 1"
+---
+
+
+
 # 콜백함수
 
 어떤 함수의 매개변수로 받는 함수를 콜백함수라고 한다.
