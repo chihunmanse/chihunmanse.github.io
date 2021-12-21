@@ -50,14 +50,24 @@ console.log(newMyArr); // undefined
 
 **filter**
 
-```
-
+```javascript
+const numbers = [1, 2, 3, 4, 5]; 
+const result = numbers.filter(number => number > 3); 
+console.log(numbers); 
+// [1, 2, 3, 4, 5]; 
+console.log(result); 
+// [4, 5]
 ```
 
 **map**
 
-```
-
+```javascript
+const numbers = [1, 2, 3, 4, 5]; 
+const result = numbers.map(number => number * number); 
+console.log(numbers); 
+// [1, 2, 3, 4, 5]; 
+console.log(result); 
+// [1, 4, 9, 16, 25]
 ```
 
 **화살표함수**
@@ -214,4 +224,5 @@ console.log(func({
 
 // 구름 : 7 : 갈색 : 이상없음
 ```
+
 
