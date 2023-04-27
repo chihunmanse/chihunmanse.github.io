@@ -11,7 +11,7 @@ type FeatureItem = {
 const FeatureList: FeatureItem[] = [
   {
     title: 'Easy to Use',
-    Svg: require('@site/static/img/undraw_docusaurus_mountain.svg').default,
+    Svg: require('@site/static/img/m.svg').default,
     description: (
       <>
         Docusaurus was designed from the ground up to be easily installed and
@@ -21,7 +21,7 @@ const FeatureList: FeatureItem[] = [
   },
   {
     title: 'Focus on What Matters',
-    Svg: require('@site/static/img/undraw_docusaurus_tree.svg').default,
+    Svg: require('@site/static/img/m.svg').default,
     description: (
       <>
         Docusaurus lets you focus on your docs, and we&apos;ll do the chores. Go
@@ -31,7 +31,7 @@ const FeatureList: FeatureItem[] = [
   },
   {
     title: 'Powered by React',
-    Svg: require('@site/static/img/undraw_docusaurus_react.svg').default,
+    Svg: require('@site/static/img/m.svg').default,
     description: (
       <>
         Extend or customize your website layout by reusing React. Docusaurus can
@@ -57,14 +57,20 @@ function Feature({title, Svg, description}: FeatureItem) {
 
 export default function HomepageFeatures(): JSX.Element {
   return (
-    <section className={styles.features}>
-      <div className="container">
-        <div className="row">
-          {FeatureList.map((props, idx) => (
-            <Feature key={idx} {...props} />
-          ))}
-        </div>
+    <div className={styles.featureContainer}>
+      <div className={styles.imageBox}>
+        <img className={styles.image} src={require('@site/static/img/m2.gif').default}></img>
       </div>
-    </section>
+      <div className={styles.description}>째깍 째깍</div>
+    </div>
+    // <section className={styles.features}>
+    //   <div className="container">
+    //     <div className="row">
+    //       {FeatureList.map((props, idx) => (
+    //         <Feature key={idx} {...props} />
+    //       ))}
+    //     </div>
+    //   </div>
+    // </section>
   );
 }
