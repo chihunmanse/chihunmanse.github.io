@@ -59,7 +59,7 @@ export default function HomepageFeatures(): JSX.Element {
   return (
     <div className={styles.featureContainer}>
       <div className={styles.imageBox}>
-        <img className={styles.image} src={require('@site/static/img/m2.gif').default}></img>
+        <img className={styles.image} src={require('@site/static/img/m.gif').default}></img>
       </div>
       <div className={styles.description}>째깍 째깍</div>
     </div>

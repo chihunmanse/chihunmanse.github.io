@@ -44,18 +44,8 @@ const config = {
       ({
         docs: {
           sidebarPath: require.resolve('./sidebars.js'),
-          // Please change this to your repo.
-          // Remove this to remove the "edit this page" links.
-          editUrl:
-            `https://github.com/${organizationName}/${projectName}/tree/main/`,
         },
-        blog: {
-          showReadingTime: true,
-          // Please change this to your repo.
-          // Remove this to remove the "edit this page" links.
-          editUrl:
-          `https://github.com/${organizationName}/${projectName}/tree/main/`,
-        },
+        blog: false,
         theme: {
           customCss: require.resolve('./src/css/custom.css'),
         },
@@ -67,7 +57,7 @@ const config = {
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
       // Replace with your project's social card
-      image: 'img/dog.png',
+      image: 'img/m.png',
       navbar: {
         title: 'Chihunmanse',
         logo: {
@@ -78,12 +68,11 @@ const config = {
         items: [
           {
             type: 'docSidebar',
-            sidebarId: 'docsSidebar',
+            sidebarId: 'blockChain',
             position: 'left',
-            label: 'Docs',
-
+            label: 'BlockChain',
           },
-          {to: '/blog', label: 'Blog', position: 'left'},
+          // {to: '/blog', label: 'Blog', position: 'left'},
           {
             href: 'https://github.com/chihunmanse',
             label: 'GitHub',
@@ -139,6 +128,7 @@ const config = {
       prism: {
         theme: lightCodeTheme,
         darkTheme: darkCodeTheme,
+        additionalLanguages: ['solidity']
       },
     }),
 };

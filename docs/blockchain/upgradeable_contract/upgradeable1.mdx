@@ -1,0 +1,272 @@
+---
+sidebar_position: 2
+---
+
+# Upgradeable Contract 1. Migration, DelegateCall
+
+## 스마트 계약의 불변성
+컨트랙트를 개발하면서 가장 까다롭게 느껴지는 지점중에 하나는 배포 이후에는 코드를 수정할 수 없다는 것이다.
+
+스마트 컨트랙트는 이름 그대로 디지털화된 계약서의 역할을 하기 때문에 계약의 불변성은 기술적인 관점과 별개로, Dapp 생태계에서 중요한 특성 중에 하나이다.
+
+만약 컨트랙트의 코드를 마음대로 수정할 수 있어서, 어플리케이션의 주요한 비즈니스 로직들이 관리자에 의해 언제든지 바뀔 수 있다면 사용자들은 그 코드를 하나의 계약으로 신임할 수 없을 것이다. 따라서 스마트계약의 불변성은 web3의 탈중앙성과 직접적으로 연결되어있다.
+
+하지만 컨트랙트를 작성하는 개발자 입장에서는, 배포 이후에 코드를 수정할 수 없다는 사실은 장점보다는 커다란 제약이자 부담감으로 다가온다.
+
+혹 사소한 실수가 담긴 코드를 배포하지는 않았을 지, 그 사소한 실수가 주요한 보안 문제를 야기시키지는 않을 지, 솔리디티 및 이더리움에 대한 부족한 이해도로 비효율적인 코드를 작성하지는 않았을 지, 후에 더 나은 방식을 익히더라도 리팩토링을 진행할 수 없다는 점까지. 컨트랙트를 배포하는 순간에 그 코드가 모든 방면에서 완결되었는 지를 검증해야 한다는 압박감은 상당하다.
+
+개발자 뿐만 아니라, 스마트 컨트랙트를 기반으로 한 프로젝트를 기획 및 운영하는 관리자의 입장도 비슷할 것이다. 기존 기능에 대한 기획이 변경되었거나, 유저들의 반응 및 기타 상황에 따라 재빠르고 유연한 변화를 필요로 할 때도 컨트랙트의 불변성은 커다란 제약이기 때문이다.
+
+이러한 불편함들을 많은 사람들이 비슷하게 느끼고 있었을 것이기에, 업그레이드 가능한 컨트랙트에 대한 다양한 기술적 방식과 접근법이 꾸준히 나오고 있는 것 같다. 이 글에서는 그런 다양한 방식 중에 몇 가지를 학습하고 적용해보면서 익힌 내용들과 소박한 느낀점들을 정리해보려고 한다.
+
+## 마이그레이션(Migration)
+첫 번째 방식은 수정된 코드를 재배포하고 이전 버전의 컨트랙트와 동기화시키는 것이다. 이 방식은 사실 업그레이드 가능한 컨트랙트라고 분류할 수 없는 방식이지만, 프록시 패턴의 필요성과 맥락을 이해하는 데에 도움을 줄 수 있고 어떤 면에서 가장 안정적인 방식일 수 있기 때문에 포함시켰다.
+
+```sol title="contracts/migration/v1.sol"
+pragma solidity ^0.8.0;
+
+contract Version1 {
+    address public owner;
+    bool public contractActive;
+
+    constructor() {
+        owner = msg.sender;
+        contractActive = true;
+    }
+
+    mapping(address => uint256) public counts;
+
+    modifier whenContractActive() {
+        require(contractActive, "contract unActive");
+        _;
+    }
+
+    function count() external whenContractActive {
+        counts[msg.sender] += 1;
+    }
+
+    function setContractActive(bool _contractActive) external {
+        require(msg.sender == owner, "only owner");
+        contractActive = _contractActive;
+    }
+}
+```
+
+count 함수를 호출한 sender에게 카운트를 1 더해주는 간단한 기능의 컨트랙트가 있다. 만약 주요 기능이 변경되거나 기존 로직에 어떤 문제가 발견되어서 count 함수를 수정해야한다고 가정해보자. 새로 작성한 count 함수를 가진 컨트랙트를 배포하고, 유저들에게 새로운 주소의 컨트랙트를 사용하게 하는 것은 그리 어려운 일이 아닐 수 있지만 문제는 이미 버전 1을 사용하고 있었던 유저들의 데이터가 새로운 컨트랙트에서도 이어져야 한다는 점이다.
+
+```sol title="contracts/migration/v2.sol"
+
+pragma solidity ^0.8.0;
+
+interface IVersion1 {
+    function counts(address) external view returns (uint256);
+}
+
+contract Version2 {
+    address public owner;
+    IVersion1 public version1;
+    bool public contractActive;
+
+    constructor(IVersion1 _version1) {
+        owner = msg.sender;
+        version1 = _version1;
+        contractActive = true;
+    }
+
+    mapping(address => uint256) public counts;
+    mapping(address => bool) private v1Counts;
+
+    modifier whenContractActive() {
+        require(contractActive, "contract unActive");
+        _;
+    }
+
+    function count() external whenContractActive {
+        if (!v1Counts[msg.sender]) {
+            v1Counts[msg.sender] = true;
+            uint256 v1Count = version1.counts(msg.sender);
+            counts[msg.sender] += v1Count;
+        }
+        counts[msg.sender] += 2;
+    }
+
+    function setContractActive(bool _contractActive) external {
+        require(msg.sender == owner, "only owner");
+        contractActive = _contractActive;
+    }
+}
+```
+
+한 가지 방안은 새로 배포되는 코드에 버전 1과의 동기화를 염두해둔 코드를 추가하는 것이다. 예시 코드에서는 버전 2의 count 함수를 sender가 처음 호출한 것이라면 버전 1의 카운트 값을 조회하고 그 값을 더 해주는 과정을 거친다. 그리고 각 컨트랙트에는 컨트랙트의 active 상태를 관리하고 있어서, 만약 버전 2로 업그레이드 됐다면 버전 1의 count 함수가 더 이상 작동되지 못하게 버전 1의 active를 false로 바꾸면 된다.
+
+이와 같은 방식의 단점은 명백하다. 일단 예시코드에서는 아주 간단한 count 값만 옮기고 있음에도 버전 2의 count 함수에서는 여러 줄의 코드가 추가 된다. 버전 1을 사용하던 모든 유저들의 기존 count 값을 옮긴 후에도 버전 2의 count 함수는 주요 로직을 수행하기 전에 언제나 ‘v1Counts’ 스토리지를 조회하여 sender에 매핑된 bool 값이 true인지 false인지를 확인할 것이다.
+
+또 예시코드가 아닌 실제 비즈니스 로직이 담긴 컨트랙트에는 훨씬 더 복잡하고 다양한 변수들을 필요로 할 것이다. 그런 복잡한 데이터들을 새로운 버전의 컨트랙트가 나올 때마다 아무런 문제 없이 계속해서 이어받는 것은 무척 까다롭고, 구현한다고 하더라도 기능과 상관 없는 연산들을 주요 함수들에 추가해야 하기 때문에 비효율적이다.
+
+또 다른 방안은 좀 더 단순하다. 관리자가 직접 새로운 버전의 컨트랙트에 이전 컨트랙트에 있던 데이터들을 이관하는 작업을 수행한 뒤에 셋팅이 완료된 후부터 새로운 컨트랙트를 사용하도록 하는 것이다. 이렇게 하면 새로운 버전의 컨트랙트에서 마이그레이션을 위한 코드를 추가하지 않아도 된다. (물론 이전 버전의 데이터를 관리자가 insert 하기 위한 기능은 추가돼있어야 한다.) 관리자는 이전 버전 컨트랙트의 조회함수를 이용하거나 이벤트를 수집하여 새로운 컨트랙트로 데이터를 옮기기만 하면 된다. 이 방식의 단점은 컨트랙트가 업그레이드 될 때마다 관리자 차원에서의 마이그레이션 비용이 발생한다는 것과, 마이그레이션의 수행이 계약 코드로 이루어지는 것이 아니라 바깥에서 이루어지기 때문에 그 과정에서 데이터가 유실되거나 변조되는 위험성이 존재한다는 것이다.
+
+참고 : https://blog.trailofbits.com/2018/10/29/how-contract-migration-works
+
+## 델리게이트콜(DelegateCall)
+위에서 나열된 고민들을 하다보면, 배포 이후 컨트랙트의 코드를 수정할 수 없다는 자칫 단순해보이는 제한사항에 대해 좀 더 구체적으로 접근할 수 있게 된다.
+
+스마트계약은 스토리지에 할당된 변수들(데이터들)과 그 데이터를 활용하는 로직으로 구성돼있다고 볼 수 있다. 따라서 계약의 수정을 필요로 할 때도 데이터 구조의 수정이 필요한 경우와 로직의 수정이 필요한 경우로 나누어 볼 수 있다. 위의 예시코드 경우에는 ‘counts’라는 매핑타입의 변수는 수정할 필요가 없지만 그 변수를 다루는 로직에 대한 수정을 필요로 한다.
+
+### 코드를 수정할 수 없다는 것의 의미
+<!-- ![stateMachine]([./img/docsVersionDropdown.png](https://miro.medium.com/v2/resize:fit:1280/format:webp/1*KYgvINFl2iyIW6oTOJOD1Q.png)) -->
+
+흔히 이더리움에 대한 정의를 내릴 때 사람들은 ‘상태머신’이라는 표현을 사용한다. 채굴된 블록이 체인에 들어가는 과정에서 트랜잭션이 실행되고, 그 트랜잭션에 의해 변경된 어카운트의 상태를 업데이트 한다. 이 때 트랜잭션의 수신자 어카운트가 CA라면, CA에 연결된 code hash를 통해 해당 컨트랙트의 코드를 찾아 EVM에서 실행시키고, CA의 스토리지 상태가 업데이트 된다.
+
+컨트랙트의 코드를 수정할 수 없다는 것의 정확한 의미는 CA에 저장된 code hash값을 수정할 수 없다는 의미이다.
+
+### 내부트랜잭션, call과 delegatecall
+트랜잭션은 언제나 EOA에 의해 발생되지만 그 수신자가 CA일 때, 수신 컨트랙트 코드에 의해 다른 CA를 호출하거나 EOA에게 이더를 전송하는 등의 내부 트랜잭션(Internal Transaction)을 일으킬 수 있다.
+
+이 때, CA가 다른 CA를 호출하는 방식은 크게 call 방식과 delegatecall 방식으로 나뉜다.
+
+A 컨트랙트가 B 컨트랙트의 함수를 호출했다고 했을 때, call은 sender가 A가 되어 B에 있는 함수의 코드를 수행하며 B가 갖고 있는 스토리지를 변경하는 방식이다. 반면 delegatecall은 sender가 A를 호출했던 어카운트인 채로, B에 있는 함수의 코드를 통해 A의 스토리지를 변경하는 방식이다.
+
+여기서 우리는 업그레이드 가능한 컨트랙트를 만들기 위한 가장 기본적인 단초를 얻을 수 있다. 이미 배포된 CA의 코드를 수정할 수는 없지만, 다른 CA의 코드를 실행시켜 기존 CA의 스토리지를 수정할 수 있다고 한다면 적어도 컨트랙트의 로직을 변경할 수 있게 되기 때문이다.
+
+### 데이터와 로직의 분리
+delegatecall을 사용하여 위의 예시코드와 같이 간단한 count 함수를 가진 컨트랙트를 만들어보자.
+
+```mdx-code-block
+<Tabs>
+<TabItem value="contracts/migration/proxy.sol">
+```
+
+```sol
+pragma solidity ^0.8.0;
+
+contract DelegateProxy {
+    address public owner;
+    address public implementation;
+
+    constructor(address _implementation) {
+        owner = msg.sender;
+        implementation = _implementation;
+    }
+
+    mapping(address => uint256) public counts;
+
+    function count() external {
+        (bool success, ) = implementation.delegatecall(
+            abi.encodeWithSignature("count()")
+        );
+
+        require(success, "failed");
+    }
+
+    function setImplementation(address _implementation) external {
+        require(msg.sender == owner, "only owner");
+        implementation = _implementation;
+    }
+}
+```
+
+```mdx-code-block
+</TabItem>
+<TabItem value="contracts/migration/v1.sol">
+```
+
+```sol
+pragma solidity ^0.8.0;
+
+contract ImplementationV1 {
+    address public owner;
+    address public implementation;
+
+    mapping(address => uint256) public counts;
+
+    function count() external {
+        counts[msg.sender] += 1;
+    }
+}
+```
+
+```mdx-code-block
+</TabItem>
+<TabItem value="contracts/migration/v2.sol">
+```
+
+```solidity
+pragma solidity ^0.8.0;
+
+contract ImplementationV2 {
+    address public owner;
+    address public implementation;
+
+    mapping(address => uint256) public counts;
+
+    function count() external {
+        counts[msg.sender] += 2;
+    }
+}
+```
+
+```mdx-code-block
+</TabItem>
+</Tabs>
+```
+
+count함수의 로직이 담긴 ImplementationV1을 먼저 배포하고 DelegateProxy를 배포하면서 ImplementationV1의 주소를 넣어준다. 이후 유저들은 DelegateProxy 컨트랙트 주소로 트랜잭션을 발생시킬 것이고, DelegateProxy의 count 함수에서는 ImplementationV1을 호출하는 내부트랜잭션을 발생시킨다. 이 때 ImplementationV1의 count 함수를 delegatecall 했기 때문에 sender는 여전히 유저의 주소인 채로, 카운트 데이터는 DelegateProxy의 스토리지에서 수정된다.
+
+만약 count 함수의 로직 수정이 필요하다면 수정된 코드의 컨트랙트를 새로 배포한 뒤에 DelegateProxy의 setImplementation 함수를 통해 delegatecall로 호출하는 로직 컨트랙트의 주소를 변경하기만 하면 된다.
+
+첫 번째로 살펴봤던 마이그레이션 방식에 비하면 무척 편리하고 효율적이다. 일단 유저들이 사용하고 있던 기존 컨트랙트를 주소를 그대로 사용하게 할 수 있으며, 당연히 기존 컨트랙트의 스토리지를 사용하기 때문에 데이터를 이관하거나 동기화하는 작업을 수행하지 않아도 된다.
+
+물론 delegatecall 방식의 장점만 존재하는 것은 아니다. 로직을 구현한 컨트랙트와 데이터가 쌓이는 컨트랙트를 분리 했을 때 가장 유의해야하는 것 중에 하나는 스토리지 충돌이다.
+
+솔리디티에서는 스토리지 변수들을 슬롯에 할당할 때 변수가 선언된 순서에 따라서 할당한다.
+
+(솔리디티의 스토리지 레이아웃에 대한 더 자세한 설명은 https://docs.soliditylang.org/en/v0.5.4/miscellaneous.html#layout-of-state-variables-in-storage 를 참고)
+
+```sol title="contracts/migration/v3.sol"
+pragma solidity ^0.8.0;
+
+contract ImplementationV3 {
+    address public owner;
+    // address public implementation;
+
+    mapping(address => uint256) public counts;
+
+    function count() external {
+        counts[msg.sender] += 3;
+    }
+}
+```
+
+만약 버전 3의 구현 컨트랙트에서 프록시 컨트랙트와 다르게 두번 째 ‘implementation’ 변수를 선언하지 않고 배포하면 어떻게 될까?
+
+```ts title="contracts/scripts/delegatecall.ts"
+  const V3 = await ethers.getContractFactory("ImplementationV3");
+  const v3 = await V3.deploy();
+  await v3.deployed();
+  console.log("V3 deployed to:", v3.address);
+
+  const versionUp2 = await proxy.setImplementation(v3.address);
+  await versionUp2.wait();
+  console.log("Set Implementation for V3");
+
+  console.log("V3 ------ V3 users Count ------ ");
+  for (let i = 0; i < v3Users.length; i++) {
+    const count = await proxy.connect(v3Users[i]).count();
+    await count.wait();
+
+    console.log(`V3 User${i} count:`, await proxy.counts(v3Users[i].address));
+  }
+```
+
+위와 같은 테스트 코드를 동작시켰을 때,
+
+```bash 
+V3 deployed to: 0x0165878A594ca255338adfa4d48449f69242Eb8F
+Set Implementation for V3
+V3 ------ V3 users Count ------
+V3 User0 count: BigNumber { value: "0" }
+V3 User1 count: BigNumber { value: "0" }
+V3 User2 count: BigNumber { value: "0" }
+V3 User3 count: BigNumber { value: "0" }
+```
+
