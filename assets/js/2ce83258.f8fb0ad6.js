@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkmy_website=self.webpackChunkmy_website||[]).push([[381],{8202:e=>{e.exports=JSON.parse('{"title":"Upgradeable Contract","slug":"/category/upgradeable-contract","permalink":"/docs/category/upgradeable-contract","navigation":{"next":{"title":"Manage Docs Versions","permalink":"/docs/blockchain/upgradeable_contract/contract"}}}')}}]);
