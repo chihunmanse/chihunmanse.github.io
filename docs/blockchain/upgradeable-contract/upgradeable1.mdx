@@ -1,8 +1,12 @@
 ---
-sidebar_position: 2
+sidebar_position: 1
 ---
 
-# Upgradeable Contract 1. Migration, DelegateCall
+# 1. Migration, DelegateCall
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
 
 ## 스마트 계약의 불변성
 컨트랙트를 개발하면서 가장 까다롭게 느껴지는 지점중에 하나는 배포 이후에는 코드를 수정할 수 없다는 것이다.
@@ -52,7 +56,7 @@ contract Version1 {
 }
 ```
 
-count 함수를 호출한 sender에게 카운트를 1 더해주는 간단한 기능의 컨트랙트가 있다. 만약 주요 기능이 변경되거나 기존 로직에 어떤 문제가 발견되어서 count 함수를 수정해야한다고 가정해보자. 새로 작성한 count 함수를 가진 컨트랙트를 배포하고, 유저들에게 새로운 주소의 컨트랙트를 사용하게 하는 것은 그리 어려운 일이 아닐 수 있지만 문제는 이미 버전 1을 사용하고 있었던 유저들의 데이터가 새로운 컨트랙트에서도 이어져야 한다는 점이다.
+`count` 함수를 호출한 sender에게 카운트를 1 더해주는 간단한 기능의 컨트랙트가 있다. 만약 주요 기능이 변경되거나 기존 로직에 어떤 문제가 발견되어서 `count` 함수를 수정해야한다고 가정해보자. 새로 작성한 `count` 함수를 가진 컨트랙트를 배포하고, 유저들에게 새로운 주소의 컨트랙트를 사용하게 하는 것은 그리 어려운 일이 아닐 수 있지만 문제는 이미 버전 1을 사용하고 있었던 유저들의 데이터가 새로운 컨트랙트에서도 이어져야 한다는 점이다.
 
 ```sol title="contracts/migration/v2.sol"
 
@@ -97,23 +101,23 @@ contract Version2 {
 }
 ```
 
-한 가지 방안은 새로 배포되는 코드에 버전 1과의 동기화를 염두해둔 코드를 추가하는 것이다. 예시 코드에서는 버전 2의 count 함수를 sender가 처음 호출한 것이라면 버전 1의 카운트 값을 조회하고 그 값을 더 해주는 과정을 거친다. 그리고 각 컨트랙트에는 컨트랙트의 active 상태를 관리하고 있어서, 만약 버전 2로 업그레이드 됐다면 버전 1의 count 함수가 더 이상 작동되지 못하게 버전 1의 active를 false로 바꾸면 된다.
+한 가지 방안은 새로 배포되는 코드에 버전 1과의 동기화를 염두해둔 코드를 추가하는 것이다. 예시 코드에서는 버전 2의 `count` 함수를 sender가 처음 호출한 것이라면 버전 1의 카운트 값을 조회하고 그 값을 더 해주는 과정을 거친다. 그리고 각 컨트랙트에는 컨트랙트의 active 상태를 관리하고 있어서, 만약 버전 2로 업그레이드 됐다면 버전 1의 `count` 함수가 더 이상 작동되지 못하게 버전 1의 active를 false로 바꾸면 된다.
 
-이와 같은 방식의 단점은 명백하다. 일단 예시코드에서는 아주 간단한 count 값만 옮기고 있음에도 버전 2의 count 함수에서는 여러 줄의 코드가 추가 된다. 버전 1을 사용하던 모든 유저들의 기존 count 값을 옮긴 후에도 버전 2의 count 함수는 주요 로직을 수행하기 전에 언제나 ‘v1Counts’ 스토리지를 조회하여 sender에 매핑된 bool 값이 true인지 false인지를 확인할 것이다.
+이와 같은 방식의 단점은 명백하다. 일단 예시코드에서는 아주 간단한 `count` 값만 옮기고 있음에도 버전 2의 `count` 함수에서는 여러 줄의 코드가 추가 된다. 버전 1을 사용하던 모든 유저들의 기존 `count` 값을 옮긴 후에도 버전 2의 `count` 함수는 주요 로직을 수행하기 전에 언제나 `v1Counts` 스토리지를 조회하여 sender에 매핑된 bool 값이 true인지 false인지를 확인할 것이다.
 
 또 예시코드가 아닌 실제 비즈니스 로직이 담긴 컨트랙트에는 훨씬 더 복잡하고 다양한 변수들을 필요로 할 것이다. 그런 복잡한 데이터들을 새로운 버전의 컨트랙트가 나올 때마다 아무런 문제 없이 계속해서 이어받는 것은 무척 까다롭고, 구현한다고 하더라도 기능과 상관 없는 연산들을 주요 함수들에 추가해야 하기 때문에 비효율적이다.
 
 또 다른 방안은 좀 더 단순하다. 관리자가 직접 새로운 버전의 컨트랙트에 이전 컨트랙트에 있던 데이터들을 이관하는 작업을 수행한 뒤에 셋팅이 완료된 후부터 새로운 컨트랙트를 사용하도록 하는 것이다. 이렇게 하면 새로운 버전의 컨트랙트에서 마이그레이션을 위한 코드를 추가하지 않아도 된다. (물론 이전 버전의 데이터를 관리자가 insert 하기 위한 기능은 추가돼있어야 한다.) 관리자는 이전 버전 컨트랙트의 조회함수를 이용하거나 이벤트를 수집하여 새로운 컨트랙트로 데이터를 옮기기만 하면 된다. 이 방식의 단점은 컨트랙트가 업그레이드 될 때마다 관리자 차원에서의 마이그레이션 비용이 발생한다는 것과, 마이그레이션의 수행이 계약 코드로 이루어지는 것이 아니라 바깥에서 이루어지기 때문에 그 과정에서 데이터가 유실되거나 변조되는 위험성이 존재한다는 것이다.
 
-참고 : https://blog.trailofbits.com/2018/10/29/how-contract-migration-works
+[참조 문서](https://blog.trailofbits.com/2018/10/29/how-contract-migration-works)
 
 ## 델리게이트콜(DelegateCall)
 위에서 나열된 고민들을 하다보면, 배포 이후 컨트랙트의 코드를 수정할 수 없다는 자칫 단순해보이는 제한사항에 대해 좀 더 구체적으로 접근할 수 있게 된다.
 
-스마트계약은 스토리지에 할당된 변수들(데이터들)과 그 데이터를 활용하는 로직으로 구성돼있다고 볼 수 있다. 따라서 계약의 수정을 필요로 할 때도 데이터 구조의 수정이 필요한 경우와 로직의 수정이 필요한 경우로 나누어 볼 수 있다. 위의 예시코드 경우에는 ‘counts’라는 매핑타입의 변수는 수정할 필요가 없지만 그 변수를 다루는 로직에 대한 수정을 필요로 한다.
+스마트계약은 스토리지에 할당된 변수들(데이터들)과 그 데이터를 활용하는 로직으로 구성돼있다고 볼 수 있다. 따라서 계약의 수정을 필요로 할 때도 데이터 구조의 수정이 필요한 경우와 로직의 수정이 필요한 경우로 나누어 볼 수 있다. 위의 예시코드 경우에는 `counts`라는 매핑타입의 변수는 수정할 필요가 없지만 그 변수를 다루는 로직에 대한 수정을 필요로 한다.
 
 ### 코드를 수정할 수 없다는 것의 의미
-<!-- ![stateMachine]([./img/docsVersionDropdown.png](https://miro.medium.com/v2/resize:fit:1280/format:webp/1*KYgvINFl2iyIW6oTOJOD1Q.png)) -->
+![stateMachine](https://miro.medium.com/v2/resize:fit:1280/format:webp/1*KYgvINFl2iyIW6oTOJOD1Q.png)
 
 흔히 이더리움에 대한 정의를 내릴 때 사람들은 ‘상태머신’이라는 표현을 사용한다. 채굴된 블록이 체인에 들어가는 과정에서 트랜잭션이 실행되고, 그 트랜잭션에 의해 변경된 어카운트의 상태를 업데이트 한다. 이 때 트랜잭션의 수신자 어카운트가 CA라면, CA에 연결된 code hash를 통해 해당 컨트랙트의 코드를 찾아 EVM에서 실행시키고, CA의 스토리지 상태가 업데이트 된다.
 
@@ -122,14 +126,14 @@ contract Version2 {
 ### 내부트랜잭션, call과 delegatecall
 트랜잭션은 언제나 EOA에 의해 발생되지만 그 수신자가 CA일 때, 수신 컨트랙트 코드에 의해 다른 CA를 호출하거나 EOA에게 이더를 전송하는 등의 내부 트랜잭션(Internal Transaction)을 일으킬 수 있다.
 
-이 때, CA가 다른 CA를 호출하는 방식은 크게 call 방식과 delegatecall 방식으로 나뉜다.
+이 때, CA가 다른 CA를 호출하는 방식은 크게 **call** 방식과 **delegatecall** 방식으로 나뉜다.
 
 A 컨트랙트가 B 컨트랙트의 함수를 호출했다고 했을 때, call은 sender가 A가 되어 B에 있는 함수의 코드를 수행하며 B가 갖고 있는 스토리지를 변경하는 방식이다. 반면 delegatecall은 sender가 A를 호출했던 어카운트인 채로, B에 있는 함수의 코드를 통해 A의 스토리지를 변경하는 방식이다.
 
 여기서 우리는 업그레이드 가능한 컨트랙트를 만들기 위한 가장 기본적인 단초를 얻을 수 있다. 이미 배포된 CA의 코드를 수정할 수는 없지만, 다른 CA의 코드를 실행시켜 기존 CA의 스토리지를 수정할 수 있다고 한다면 적어도 컨트랙트의 로직을 변경할 수 있게 되기 때문이다.
 
 ### 데이터와 로직의 분리
-delegatecall을 사용하여 위의 예시코드와 같이 간단한 count 함수를 가진 컨트랙트를 만들어보자.
+delegatecall을 사용하여 위의 예시코드와 같이 간단한 `count` 함수를 가진 컨트랙트를 만들어보자.
 
 ```mdx-code-block
 <Tabs>
@@ -210,9 +214,9 @@ contract ImplementationV2 {
 </Tabs>
 ```
 
-count함수의 로직이 담긴 ImplementationV1을 먼저 배포하고 DelegateProxy를 배포하면서 ImplementationV1의 주소를 넣어준다. 이후 유저들은 DelegateProxy 컨트랙트 주소로 트랜잭션을 발생시킬 것이고, DelegateProxy의 count 함수에서는 ImplementationV1을 호출하는 내부트랜잭션을 발생시킨다. 이 때 ImplementationV1의 count 함수를 delegatecall 했기 때문에 sender는 여전히 유저의 주소인 채로, 카운트 데이터는 DelegateProxy의 스토리지에서 수정된다.
+`count` 함수의 로직이 담긴 `ImplementationV1`을 먼저 배포하고 `DelegateProxy`를 배포하면서 `ImplementationV1`의 주소를 넣어준다. 이후 유저들은 `DelegateProxy` 컨트랙트 주소로 트랜잭션을 발생시킬 것이고, `DelegateProxy`의 `count` 함수에서는 `ImplementationV1`을 호출하는 내부트랜잭션을 발생시킨다. 이 때 `ImplementationV1`의 `count` 함수를 delegatecall 했기 때문에 sender는 여전히 유저의 주소인 채로, 카운트 데이터는 `DelegateProxy`의 스토리지에서 수정된다.
 
-만약 count 함수의 로직 수정이 필요하다면 수정된 코드의 컨트랙트를 새로 배포한 뒤에 DelegateProxy의 setImplementation 함수를 통해 delegatecall로 호출하는 로직 컨트랙트의 주소를 변경하기만 하면 된다.
+만약 `count` 함수의 로직 수정이 필요하다면 수정된 코드의 컨트랙트를 새로 배포한 뒤에 `DelegateProxy`의 `setImplementation` 함수를 통해 delegatecall로 호출하는 로직 컨트랙트의 주소를 변경하기만 하면 된다.
 
 첫 번째로 살펴봤던 마이그레이션 방식에 비하면 무척 편리하고 효율적이다. 일단 유저들이 사용하고 있던 기존 컨트랙트를 주소를 그대로 사용하게 할 수 있으며, 당연히 기존 컨트랙트의 스토리지를 사용하기 때문에 데이터를 이관하거나 동기화하는 작업을 수행하지 않아도 된다.
 
@@ -220,7 +224,7 @@ count함수의 로직이 담긴 ImplementationV1을 먼저 배포하고 Delegate
 
 솔리디티에서는 스토리지 변수들을 슬롯에 할당할 때 변수가 선언된 순서에 따라서 할당한다.
 
-(솔리디티의 스토리지 레이아웃에 대한 더 자세한 설명은 https://docs.soliditylang.org/en/v0.5.4/miscellaneous.html#layout-of-state-variables-in-storage 를 참고)
+(솔리디티의 스토리지 레이아웃에 대한 더 자세한 설명은 [해당 문서](https://docs.soliditylang.org/en/v0.5.4/miscellaneous.html#layout-of-state-variables-in-storage)를 참고)
 
 ```sol title="contracts/migration/v3.sol"
 pragma solidity ^0.8.0;
@@ -237,7 +241,7 @@ contract ImplementationV3 {
 }
 ```
 
-만약 버전 3의 구현 컨트랙트에서 프록시 컨트랙트와 다르게 두번 째 ‘implementation’ 변수를 선언하지 않고 배포하면 어떻게 될까?
+만약 버전 3의 구현 컨트랙트에서 프록시 컨트랙트와 다르게 두번 째 `implementation` 변수를 선언하지 않고 배포하면 어떻게 될까?
 
 ```ts title="contracts/scripts/delegatecall.ts"
   const V3 = await ethers.getContractFactory("ImplementationV3");
@@ -270,3 +274,15 @@ V3 User2 count: BigNumber { value: "0" }
 V3 User3 count: BigNumber { value: "0" }
 ```
 
+버전 4에서 구현된 `test` 함수에서는 `second` 변수에 값을 대입하고 있지만, 프록시 컨트랙트에서는 `implementation`의 값이 바뀌어있다. 버전 4의 `second` 변수는 변수명만 다를 뿐, 같은 스토리지 슬롯에 할당되어있을 것이기 때문이다. 이처럼 사소한 실수로 인해 프록시 컨트랙트에서 매우 중요한 구현 컨트랙트의 주소가 예상치 못한 값으로 변경되는 스토리지 충돌이 일어날 수 있다.
+
+<hr/>
+
+잠시 돌아와서, 위의 예시 코드로 구현된 델리게이트콜 방식에는 업그레이드 가능한 컨트랙트로서 또 다른 단점이 존재한다. 프록시 컨트랙트에 기본적으로 함수가 구현되어있기 때문에 업그레이드 되는 구현 컨트랙트는 결국 프록시 컨트랙트에 있는 함수에 종속된다. 만약 `count` 함수에 새로운 인자가 필요하게 되거나, return이 필요한 함수가 새롭게 추가되어야 한다고 했을 때는 현재의 방식으로는 더 이상 업그레이드 할 수 없고 결국 새로운 프록시 컨트랙트를 배포해야 한다.
+
+이런 제약을 해결하기 위해 데이터와 로직을 분리하는 프록시 패턴은 기본적으로 delegatecall 과 fallback 함수의 조합을 통해 구현된다.
+
+## 이어서...
+다음 글에서는 위에서 살펴봤던 스토리지 충돌을 해결하기 위한 ERC1967Proxy와 오픈재플린의 투명프록시, 그리고 UUPS에 대해서 살펴보려고 한다.
+
+글에서 언급된 예시코드는 [링크](https://github.com/chihunmanse/solidity-upgradeable)로 들어가면 볼 수 있고, 직접 테스트 결과를 확인해볼 수 있다.
