@@ -4,11 +4,11 @@ sidebar_position: 1
 
 # 1. Migration, DelegateCall
 
-import Tabs from '@theme/Tabs';
-import TabItem from '@theme/TabItem';
-
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
 
 ## 스마트 계약의 불변성
+
 컨트랙트를 개발하면서 가장 까다롭게 느껴지는 지점중에 하나는 배포 이후에는 코드를 수정할 수 없다는 것이다.
 
 스마트 컨트랙트는 이름 그대로 디지털화된 계약서의 역할을 하기 때문에 계약의 불변성은 기술적인 관점과 별개로, Dapp 생태계에서 중요한 특성 중에 하나이다.
@@ -24,6 +24,7 @@ import TabItem from '@theme/TabItem';
 이러한 불편함들을 많은 사람들이 비슷하게 느끼고 있었을 것이기에, 업그레이드 가능한 컨트랙트에 대한 다양한 기술적 방식과 접근법이 꾸준히 나오고 있는 것 같다. 이 글에서는 그런 다양한 방식 중에 몇 가지를 학습하고 적용해보면서 익힌 내용들과 소박한 느낀점들을 정리해보려고 한다.
 
 ## 마이그레이션(Migration)
+
 첫 번째 방식은 수정된 코드를 재배포하고 이전 버전의 컨트랙트와 동기화시키는 것이다. 이 방식은 사실 업그레이드 가능한 컨트랙트라고 분류할 수 없는 방식이지만, 프록시 패턴의 필요성과 맥락을 이해하는 데에 도움을 줄 수 있고 어떤 면에서 가장 안정적인 방식일 수 있기 때문에 포함시켰다.
 
 ```sol title="contracts/migration/v1.sol"
@@ -112,11 +113,13 @@ contract Version2 {
 [참조 문서](https://blog.trailofbits.com/2018/10/29/how-contract-migration-works)
 
 ## 델리게이트콜(DelegateCall)
+
 위에서 나열된 고민들을 하다보면, 배포 이후 컨트랙트의 코드를 수정할 수 없다는 자칫 단순해보이는 제한사항에 대해 좀 더 구체적으로 접근할 수 있게 된다.
 
 스마트계약은 스토리지에 할당된 변수들(데이터들)과 그 데이터를 활용하는 로직으로 구성돼있다고 볼 수 있다. 따라서 계약의 수정을 필요로 할 때도 데이터 구조의 수정이 필요한 경우와 로직의 수정이 필요한 경우로 나누어 볼 수 있다. 위의 예시코드 경우에는 `counts`라는 매핑타입의 변수는 수정할 필요가 없지만 그 변수를 다루는 로직에 대한 수정을 필요로 한다.
 
 ### 코드를 수정할 수 없다는 것의 의미
+
 ![stateMachine](https://miro.medium.com/v2/resize:fit:1280/format:webp/1*KYgvINFl2iyIW6oTOJOD1Q.png)
 
 흔히 이더리움에 대한 정의를 내릴 때 사람들은 ‘상태머신’이라는 표현을 사용한다. 채굴된 블록이 체인에 들어가는 과정에서 트랜잭션이 실행되고, 그 트랜잭션에 의해 변경된 어카운트의 상태를 업데이트 한다. 이 때 트랜잭션의 수신자 어카운트가 CA라면, CA에 연결된 code hash를 통해 해당 컨트랙트의 코드를 찾아 EVM에서 실행시키고, CA의 스토리지 상태가 업데이트 된다.
@@ -124,6 +127,7 @@ contract Version2 {
 컨트랙트의 코드를 수정할 수 없다는 것의 정확한 의미는 CA에 저장된 code hash값을 수정할 수 없다는 의미이다.
 
 ### 내부트랜잭션, call과 delegatecall
+
 트랜잭션은 언제나 EOA에 의해 발생되지만 그 수신자가 CA일 때, 수신 컨트랙트 코드에 의해 다른 CA를 호출하거나 EOA에게 이더를 전송하는 등의 내부 트랜잭션(Internal Transaction)을 일으킬 수 있다.
 
 이 때, CA가 다른 CA를 호출하는 방식은 크게 **call** 방식과 **delegatecall** 방식으로 나뉜다.
@@ -133,11 +137,12 @@ A 컨트랙트가 B 컨트랙트의 함수를 호출했다고 했을 때, call�
 여기서 우리는 업그레이드 가능한 컨트랙트를 만들기 위한 가장 기본적인 단초를 얻을 수 있다. 이미 배포된 CA의 코드를 수정할 수는 없지만, 다른 CA의 코드를 실행시켜 기존 CA의 스토리지를 수정할 수 있다고 한다면 적어도 컨트랙트의 로직을 변경할 수 있게 되기 때문이다.
 
 ### 데이터와 로직의 분리
+
 delegatecall을 사용하여 위의 예시코드와 같이 간단한 `count` 함수를 가진 컨트랙트를 만들어보자.
 
 ```mdx-code-block
 <Tabs>
-<TabItem value="contracts/migration/proxy.sol">
+<TabItem value="contracts/delegatecall/proxy.sol">
 ```
 
 ```sol
@@ -171,7 +176,7 @@ contract DelegateProxy {
 
 ```mdx-code-block
 </TabItem>
-<TabItem value="contracts/migration/v1.sol">
+<TabItem value="contracts/delegatecall/v1.sol">
 ```
 
 ```sol
@@ -191,7 +196,7 @@ contract ImplementationV1 {
 
 ```mdx-code-block
 </TabItem>
-<TabItem value="contracts/migration/v2.sol">
+<TabItem value="contracts/delegatecall/v2.sol">
 ```
 
 ```solidity
@@ -226,7 +231,7 @@ contract ImplementationV2 {
 
 (솔리디티의 스토리지 레이아웃에 대한 더 자세한 설명은 [해당 문서](https://docs.soliditylang.org/en/v0.5.4/miscellaneous.html#layout-of-state-variables-in-storage)를 참고)
 
-```sol title="contracts/migration/v3.sol"
+```sol title="contracts/delegatecall/v3.sol"
 pragma solidity ^0.8.0;
 
 contract ImplementationV3 {
@@ -244,27 +249,27 @@ contract ImplementationV3 {
 만약 버전 3의 구현 컨트랙트에서 프록시 컨트랙트와 다르게 두번 째 `implementation` 변수를 선언하지 않고 배포하면 어떻게 될까?
 
 ```ts title="contracts/scripts/delegatecall.ts"
-  const V3 = await ethers.getContractFactory("ImplementationV3");
-  const v3 = await V3.deploy();
-  await v3.deployed();
-  console.log("V3 deployed to:", v3.address);
+const V3 = await ethers.getContractFactory("ImplementationV3");
+const v3 = await V3.deploy();
+await v3.deployed();
+console.log("V3 deployed to:", v3.address);
 
-  const versionUp2 = await proxy.setImplementation(v3.address);
-  await versionUp2.wait();
-  console.log("Set Implementation for V3");
+const versionUp2 = await proxy.setImplementation(v3.address);
+await versionUp2.wait();
+console.log("Set Implementation for V3");
 
-  console.log("V3 ------ V3 users Count ------ ");
-  for (let i = 0; i < v3Users.length; i++) {
-    const count = await proxy.connect(v3Users[i]).count();
-    await count.wait();
+console.log("V3 ------ V3 users Count ------ ");
+for (let i = 0; i < v3Users.length; i++) {
+  const count = await proxy.connect(v3Users[i]).count();
+  await count.wait();
 
-    console.log(`V3 User${i} count:`, await proxy.counts(v3Users[i].address));
-  }
+  console.log(`V3 User${i} count:`, await proxy.counts(v3Users[i].address));
+}
 ```
 
 위와 같은 테스트 코드를 동작시켰을 때,
 
-```bash 
+```bash
 V3 deployed to: 0x0165878A594ca255338adfa4d48449f69242Eb8F
 Set Implementation for V3
 V3 ------ V3 users Count ------
@@ -274,15 +279,142 @@ V3 User2 count: BigNumber { value: "0" }
 V3 User3 count: BigNumber { value: "0" }
 ```
 
+`count` 함수를 호출한 뒤에 프록시 컨트랙트에서 `counts`를 조회해도 0이 나오는 것을 볼 수 있다. 솔리디티에서 매핑의 value가 스토리지에 저장되는 방식은 최초 매핑이 할당된 슬롯넘버와 매핑의 키 값을 함께 해싱한 값의 슬롯에 저장된다.
+
+프록시 컨트랙트에서 `counts` 매핑은 세 번째에 선언되었음으로 슬롯넘버 2와(0부터 할당되기 때문에) sender의 address를 함께 해싱한 값의 슬롯에 count 값이 저장될 것이다. 반면 버전 3 컨트랙트에서는 두번 째에 선언되었기 때문에 슬롯넘버 1과 함께 해싱한 값의 슬롯에 count 값이 저장된다.
+
+때문에 프록시 컨트랙트에서 `counts`를 조회해도 `count` 함수의 결과가 반영되지 않는 것이다.
+
+이처럼 delegatecall을 사용할 때는 솔리디티의 스토리지 레이아웃에 대한 이해가 필요하며 변수가 선언되는 순서가 무척 중요하다.
+
+특히 프록시 컨트랙트에서는 비즈니스 로직을 위한 변수들도 필요하지만 기본적으로 로직이 구현된 컨트랙트를 호출하기 위한 구현 컨트랙트의 주소값이 꼭 필요하다.
+
+```mdx-code-block
+<Tabs>
+<TabItem value="contracts/delegatecall/proxy.sol">
+```
+
+```sol
+pragma solidity ^0.8.0;
+
+contract DelegateProxy {
+    address public owner;
+    address public implementation;
+
+    constructor(address _implementation) {
+        owner = msg.sender;
+        implementation = _implementation;
+    }
+
+    mapping(address => uint256) public counts;
+    address public second;
+
+    function count() external {
+        (bool success, ) = implementation.delegatecall(
+            abi.encodeWithSignature("count()")
+        );
+
+        require(success, "failed");
+    }
+
+    function setImplementation(address _implementation) external {
+        require(msg.sender == owner, "only owner");
+        implementation = _implementation;
+    }
+
+    function test(address _second) external {
+        (bool success, ) = implementation.delegatecall(
+            abi.encodeWithSignature("test(address)", _second)
+        );
+
+        require(success, "failed");
+    }
+}
+```
+
+```mdx-code-block
+</TabItem>
+<TabItem value="contracts/delegatecall/v4.sol">
+```
+
+```sol
+pragma solidity ^0.8.0;
+
+contract ImplementationV4 {
+    uint256 public first;
+    address public second;
+
+    mapping(address => uint256) public counts;
+
+    function count() external {
+        counts[msg.sender] += 3;
+    }
+
+    function test(address _second) external {
+        second = _second;
+    }
+}
+```
+
+```mdx-code-block
+</TabItem>
+</Tabs>
+```
+
+프록시 컨트랙트에 `second`라는 변수를 추가하고 delegatecall로 버전4의 함수를 호출하는 `test` 함수를 추가했다. 버전 4의 코드를 작성하던 개발자가 실수로 프록시 컨트랙트의 `implementation` 이 선언되는 순서에 같은 address 타입의 `second` 변수를 선언했다고 해보자.
+
+```ts
+const V4 = await ethers.getContractFactory("ImplementationV4");
+const v4 = await V4.deploy();
+await v4.deployed();
+console.log("V4 deployed to:", v4.address);
+
+const versionUp3 = await proxy.setImplementation(v4.address);
+await versionUp3.wait();
+console.log("Set Implementation for V4");
+
+console.log("V4 ------ V4 users Count ------ ");
+for (let i = 0; i < v4Users.length; i++) {
+  const count = await proxy.connect(v4Users[i]).count();
+  await count.wait();
+
+  console.log(`V4 User${i} count:`, await proxy.counts(v4Users[i].address));
+}
+
+console.log("V4 ------ storage test ------ ");
+const test = await proxy.test(users[0].address);
+await test.wait();
+console.log("users[0]:", users[0].address);
+console.log("second:", await proxy.second());
+console.log("implementation:", await proxy.implementation());
+```
+
+위와 같은 테스트코드를 동작시켰을 때,
+
+```bash
+V4 deployed to: 0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6
+Set Implementation for V4
+V4 ------ V4 users Count ------
+V4 User0 count: BigNumber { value: "3" }
+V4 User1 count: BigNumber { value: "3" }
+V4 User2 count: BigNumber { value: "3" }
+V4 User3 count: BigNumber { value: "3" }
+V4 ------ storage test ------
+users[0]: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
+second: 0x0000000000000000000000000000000000000000
+implementation: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
+```
+
 버전 4에서 구현된 `test` 함수에서는 `second` 변수에 값을 대입하고 있지만, 프록시 컨트랙트에서는 `implementation`의 값이 바뀌어있다. 버전 4의 `second` 변수는 변수명만 다를 뿐, 같은 스토리지 슬롯에 할당되어있을 것이기 때문이다. 이처럼 사소한 실수로 인해 프록시 컨트랙트에서 매우 중요한 구현 컨트랙트의 주소가 예상치 못한 값으로 변경되는 스토리지 충돌이 일어날 수 있다.
 
-<hr/>
+<hr />
 
 잠시 돌아와서, 위의 예시 코드로 구현된 델리게이트콜 방식에는 업그레이드 가능한 컨트랙트로서 또 다른 단점이 존재한다. 프록시 컨트랙트에 기본적으로 함수가 구현되어있기 때문에 업그레이드 되는 구현 컨트랙트는 결국 프록시 컨트랙트에 있는 함수에 종속된다. 만약 `count` 함수에 새로운 인자가 필요하게 되거나, return이 필요한 함수가 새롭게 추가되어야 한다고 했을 때는 현재의 방식으로는 더 이상 업그레이드 할 수 없고 결국 새로운 프록시 컨트랙트를 배포해야 한다.
 
 이런 제약을 해결하기 위해 데이터와 로직을 분리하는 프록시 패턴은 기본적으로 delegatecall 과 fallback 함수의 조합을 통해 구현된다.
 
 ## 이어서...
+
 다음 글에서는 위에서 살펴봤던 스토리지 충돌을 해결하기 위한 ERC1967Proxy와 오픈재플린의 투명프록시, 그리고 UUPS에 대해서 살펴보려고 한다.
 
 글에서 언급된 예시코드는 [링크](https://github.com/chihunmanse/solidity-upgradeable)로 들어가면 볼 수 있고, 직접 테스트 결과를 확인해볼 수 있다.
