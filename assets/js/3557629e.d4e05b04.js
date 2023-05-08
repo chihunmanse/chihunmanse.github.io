@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkmy_website=self.webpackChunkmy_website||[]).push([[415],{5633:e=>{e.exports=JSON.parse('{"title":"Project","slug":"/category/project","permalink":"/docs/category/project","navigation":{"next":{"title":"LUSH Clone Project","permalink":"/docs/backend/project/project1"}}}')}}]);
