@@ -72,6 +72,12 @@ const config = {
             position: 'left',
             label: 'BlockChain',
           },
+          {
+            type: 'docSidebar',
+            sidebarId: 'backEnd',
+            position: 'left',
+            label: 'BackEnd'
+          },
           // {to: '/blog', label: 'Blog', position: 'left'},
           {
             href: 'https://github.com/chihunmanse',
