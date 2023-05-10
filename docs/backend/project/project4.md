@@ -2,12 +2,14 @@
 sidebar_position: 4
 ---
 
-# Nest.js Project
+# NestJS Project
 
 **기간: 2022-01-17 ~ 2022-01-28**
-**Stack: TypeScript, Nest.js, MongoDB, Mongoose**
+
+**Stack: TypeScript, NestJS, MongoDB, Mongoose**
 
 **[Github 링크](https://github.com/chihunmanse/nest-api)**
+
 **[API Document](https://documenter.getpostman.com/view/17663987/UVe9QUfM)**
 
 ## ENDPOINT
@@ -36,7 +38,7 @@ sidebar_position: 4
 
 ### POST /users/signup (회원가입)
 
-```ts title="유저 스키마"
+```ts title="users.schema.ts"
 export class User extends Document {
   @Prop({
     required: true,
@@ -353,7 +355,7 @@ async findProductByKeyword(
   likeUsers: object;
 ```
 
-![img1](https://github.com/chihunmanse/image/assets/61782539/17910a02-120d-4c61-b418-e987e9717141)
+![img1](https://i.ibb.co/fQCyWNK/2022-01-28-4-10-08.png)
 
 products에 `likeUsers`라는 object 타입의 필드를 생성하고 유저가 좋아요한 상품들을 조회할 때 검색속도를 높이기 위해 array 타입이 아닌 좋아요한 유저의 objectId를 키 값으로 객체에 데이터를 추가하였다.
 
@@ -758,7 +760,7 @@ async findCartByUser(userId: string) {
   }
 ```
 
-```js title="query결과"
+```js title="query 결과"
 Mongoose: carts.findOne({ user: new ObjectId("61ef4ef483aeaabd737f4059") }, { projection: { items: 1 } })
 Mongoose: products.find({ _id: { '$in': [ new ObjectId("61e7cb111c3b362cd6b15440"), new ObjectId("61e7b58e1c3b362cd6b15413") ], [Symbol(mongoose#trustedSymbol)]: true }}, { skip: undefined, limit: undefined, perDocumentLimit: undefined, projection: { category: 0, likeCount: 0 }})
 ```
@@ -825,7 +827,7 @@ async findCartByUser(userId: string): Promise<aggregateCartDto> {
   }
 ```
 
-```js title="query결과"
+```js title="query 결과"
 Mongoose: carts.aggregate(
   [
     { $match: { user: new ObjectId("61ef4ef483aeaabd737f4059") } },
@@ -934,7 +936,7 @@ export class Review extends Document {
 
 Subset 패턴을 도입하여 상품 도큐먼트에 5개의 최신 리뷰들을 따로 저장하였다.
 
-![스크린샷 2022-01-28 오후 5 15 08](https://github.com/chihunmanse/image/assets/61782539/fc05210a-59f6-404b-8a63-b2d897db4b59)
+![img](https://i.ibb.co/hmp1KwY/2022-01-28-5-15-08.png)
 
 상품 도큐먼트에 정해진 갯수만큼의 최신 리뷰들을 저장해놓는 방식을 사용하면 조회시에 효율적으로 데이터를 전달할 수 있다.
 

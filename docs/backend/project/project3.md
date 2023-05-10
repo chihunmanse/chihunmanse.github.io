@@ -5,6 +5,7 @@ sidebar_position: 3
 # 원티드 프리온보딩 8percent 기업과제
 
 **기간: 2021-11-12 ~ 2021-11-13**
+
 **Stack: Python, Django, SQLite, DjangoORM**
 
 **[Github 링크](https://github.com/chihunmanse/PreonBoarding4-8percent)**
