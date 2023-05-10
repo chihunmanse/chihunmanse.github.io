@@ -5,6 +5,7 @@ sidebar_position: 4
 # Nest.js Project
 
 **기간: 2022-01-17 ~ 2022-01-28**
+**Stack: TypeScript, Nest.js, MongoDB, Mongoose**
 
 **[Github 링크](https://github.com/chihunmanse/nest-api)**
 **[API Document](https://documenter.getpostman.com/view/17663987/UVe9QUfM)**
@@ -289,7 +290,7 @@ export class QueryValidationPipe implements PipeTransform {
 }
 ```
 
-카테고리값이 objectId 형식이 맞는지, offset과 limit이 양수인지에 대해 체크하기 위해 요청의 query 값에 대해 유효성 검사를 수행하는 pipe를 따로 작성하였다.
+`category`값이 objectId 형식이 맞는지, `offset`과 `limit`이 양수인지에 대해 체크하기 위해 요청의 query 값에 대해 유효성 검사를 수행하는 pipe를 따로 작성하였다.
 
 ```ts title="productByKeyword.request.dto.ts"
 export class ProductByKeywordRequestDto {
@@ -352,9 +353,9 @@ async findProductByKeyword(
   likeUsers: object;
 ```
 
-![스크린샷 2022-01-28 오후 4.10.08.png](https://s3-us-west-2.amazonaws.com/secure.notion-static.com/c771645d-c319-4f4b-aa41-aac32da239e5/스크린샷_2022-01-28_오후_4.10.08.png)
+![img1](https://github.com/chihunmanse/image/assets/61782539/17910a02-120d-4c61-b418-e987e9717141)
 
-products에 likeUsers라는 object 타입의 필드를 생성하고 유저가 좋아요한 상품들을 조회할 때 검색속도를 높이기 위해 array 타입이 아닌 좋아요한 유저의 objectId를 키 값으로 객체에 데이터를 추가하였다.
+products에 `likeUsers`라는 object 타입의 필드를 생성하고 유저가 좋아요한 상품들을 조회할 때 검색속도를 높이기 위해 array 타입이 아닌 좋아요한 유저의 objectId를 키 값으로 객체에 데이터를 추가하였다.
 
 ```ts title="products.controller.ts"
 @UseGuards(JwtAuthGuard)
@@ -394,7 +395,7 @@ async updateLikeUser(productId: string, userId: string) {
   }
 ```
 
-유저가 이미 좋아요한 상품이라면 likeUsers object에서 유저의 key값을 삭제하고 좋아요하지 않았다면 유저의 key값을 생성한다.
+유저가 이미 좋아요한 상품이라면 `likeUsers` object에서 유저의 key값을 삭제하고 좋아요하지 않았다면 유저의 key값을 생성한다.
 
 ```tsx title="products.repository.ts"
 	async existsLike(productId: string, userId: string): Promise<boolean> {
@@ -472,7 +473,7 @@ async findLikeProduct(userId: string): Promise<Product[]> {
   }
 ```
 
-products 콜렉션에서 likeUsers의 key값이 로그인 유저의 objectId와 같고 value값이 true인 상품들을 필터링하여 조회한다.
+products 콜렉션에서 `likeUsers`의 key값이 로그인 유저의 objectId와 같고 value값이 true인 상품들을 필터링하여 조회한다.
 
 ### 장바구니 아이템 추가, 수정, 삭제, 조회
 
@@ -512,7 +513,7 @@ export class Cart extends Document {
 }
 ```
 
-items라는 array 타입 필드에 Product와 수량들을 저장하는 형태이다.
+`items`라는 array 타입 필드에 `product`와 수량들을 저장하는 형태이다.
 
 ```ts title="carts.controller.ts"
 @UseGuards(JwtAuthGuard)
@@ -757,7 +758,7 @@ async findCartByUser(userId: string) {
   }
 ```
 
-```js
+```js title="query결과"
 Mongoose: carts.findOne({ user: new ObjectId("61ef4ef483aeaabd737f4059") }, { projection: { items: 1 } })
 Mongoose: products.find({ _id: { '$in': [ new ObjectId("61e7cb111c3b362cd6b15440"), new ObjectId("61e7b58e1c3b362cd6b15413") ], [Symbol(mongoose#trustedSymbol)]: true }}, { skip: undefined, limit: undefined, perDocumentLimit: undefined, projection: { category: 0, likeCount: 0 }})
 ```
@@ -824,7 +825,7 @@ async findCartByUser(userId: string): Promise<aggregateCartDto> {
   }
 ```
 
-```js
+```js title="query결과"
 Mongoose: carts.aggregate(
   [
     { $match: { user: new ObjectId("61ef4ef483aeaabd737f4059") } },
@@ -881,9 +882,7 @@ Mongoose: carts.aggregate(
 - PUT /products/reviews/:reviewId (리뷰 수정)
 - DELETE /products/reviews/:reviewId (리뷰 삭제)
 
-**reviews.schema.ts**
-
-```ts
+```ts title="reviews.schema.ts"
 @Schema(options)
 export class Review extends Document {
   @Prop({
@@ -928,24 +927,20 @@ export class Review extends Document {
 }
 ```
 
-**products.schema.ts**
-
-```ts
+```ts title="products.schema.ts"
 @Prop()
   recentReviews: Review[];
 ```
 
-Subset 패턴을 도입하여 상품 도큐먼트에 5개의 최신 리뷰들을 따로 저장
+Subset 패턴을 도입하여 상품 도큐먼트에 5개의 최신 리뷰들을 따로 저장하였다.
 
-![스크린샷 2022-01-28 오후 5.15.08.png](https://s3-us-west-2.amazonaws.com/secure.notion-static.com/9e69a26a-ae6b-42f5-bc63-8447b3b5bb8f/스크린샷_2022-01-28_오후_5.15.08.png)
+![스크린샷 2022-01-28 오후 5 15 08](https://github.com/chihunmanse/image/assets/61782539/fc05210a-59f6-404b-8a63-b2d897db4b59)
 
-이 때 상품 도큐먼트에 정해진 갯수만큼의 최신 리뷰들을 저장해놓는 방식을 사용하면 조회시에 효율적으로 데이터를 전달할 수 있다.
+상품 도큐먼트에 정해진 갯수만큼의 최신 리뷰들을 저장해놓는 방식을 사용하면 조회시에 효율적으로 데이터를 전달할 수 있다.
 
 하지만 데이터 수정이 발생했을 때 양쪽 모두를 수정해주어야하고, 새로운 리뷰가 생성될 때마다 상품의 최신리뷰 필드를 정해진 갯수에 맞게 갱신해주는 작업을 해주어야하기 때문에 생성과 수정이 더 빈번한 데이터라고 한다면 오히려 비효율적일 수 있다.
 
-**reviews.controller.ts**
-
-```ts
+```ts title="reviews.controller.ts"
 @UseGuards(JwtAuthGuard)
   @Post(':productId')
   async createReivew(
@@ -961,8 +956,6 @@ Subset 패턴을 도입하여 상품 도큐먼트에 5개의 최신 리뷰들을
     };
     return await this.reviewsService.createReview(reviewDto);
   }
-
-//rating 값에 대한 validationPipe 작성
 
   @Get(':productId')
   async getReivewByProduct(
@@ -993,9 +986,7 @@ Subset 패턴을 도입하여 상품 도큐먼트에 5개의 최신 리뷰들을
   }
 ```
 
-**reviews.service.ts**
-
-```ts
+```ts title="reviews.service.ts"
 	async createReview(reviewDto: ReviewDto) {
     const { product } = reviewDto;
 
@@ -1067,9 +1058,7 @@ Subset 패턴을 도입하여 상품 도큐먼트에 5개의 최신 리뷰들을
   }
 ```
 
-**reviews.repository.ts**
-
-```ts
+```ts title="reviews.repository.ts"
 	async createReview(reviewDto: ReviewDto): Promise<Review> {
     return await this.reviewModel.create(reviewDto);
   }
@@ -1092,6 +1081,7 @@ Subset 패턴을 도입하여 상품 도큐먼트에 5개의 최신 리뷰들을
     );
   }
 
+	// 삭제시에 isDeleted 필드를 true 값으로 수정하여 softDelete
   async deleteReview(reviewId: string): Promise<Review> {
     return await this.reviewModel.findOneAndUpdate(
       {
@@ -1106,8 +1096,6 @@ Subset 패턴을 도입하여 상품 도큐먼트에 5개의 최신 리뷰들을
     );
   }
 
-	// 삭제시에 isDeleted 필드를 true 값으로 수정하여 softDelete
-
   async existsReview(reviewId: string, userId: string): Promise<boolean> {
     return await this.reviewModel.exists({
       _id: reviewId,
@@ -1115,6 +1103,7 @@ Subset 패턴을 도입하여 상품 도큐먼트에 5개의 최신 리뷰들을
     });
   }
 
+  // 상품의 최신리뷰 필드에 생성된 리뷰 push
   async addRecentReview(review: Review) {
     return await this.productModel.updateOne(
       {
@@ -1124,8 +1113,7 @@ Subset 패턴을 도입하여 상품 도큐먼트에 5개의 최신 리뷰들을
     );
   }
 
-	// 상품의 최신리뷰 필드에 생성된 리뷰 push
-
+  // 최신리뷰 필드에 리뷰 수가 5개가 넘어갔을 때 가장 오래된 리뷰를 array에서 삭제
   async removeRecentReview(productId: string) {
     return await this.productModel.updateOne(
       {
@@ -1137,8 +1125,7 @@ Subset 패턴을 도입하여 상품 도큐먼트에 5개의 최신 리뷰들을
     );
   }
 
-	// 최신리뷰 필드에 리뷰 수가 5개가 넘어갔을 때 가장 오래된 리뷰를 array에서 삭제
-
+  // 수정 리뷰가 최신 리뷰 필드에 존재한다면 함께 수정
   async updateRecentReview(review: Review): Promise<Product> {
     return await this.productModel.findOneAndUpdate(
       {
@@ -1159,8 +1146,7 @@ Subset 패턴을 도입하여 상품 도큐먼트에 5개의 최신 리뷰들을
     );
   }
 
-// 수정 리뷰가 최신 리뷰 필드에 존재한다면 함께 수정
-
+  // 삭제 리뷰가 최신 리뷰 필드에 존재한다면 array에서 삭제
   async deleteRecentReview(reviewId: string) {
     return await this.productModel.updateOne(
       {
@@ -1176,8 +1162,7 @@ Subset 패턴을 도입하여 상품 도큐먼트에 5개의 최신 리뷰들을
     );
   }
 
-// 삭제 리뷰가 최신 리뷰 필드에 존재한다면 array에서 삭제
-
+  // 최신 리뷰 array에 담긴 리뷰 수를 count
   async countRecentReview(productId: string): Promise<number> {
     const countAggregation = await this.productModel.aggregate([
       {
@@ -1198,8 +1183,6 @@ Subset 패턴을 도입하여 상품 도큐먼트에 5개의 최신 리뷰들을
     ]);
     return countAggregation[0].reviewCount;
   }
-
-// 최신 리뷰 array에 담긴 리뷰 수를 count
 
   async countReview(productId: string): Promise<number> {
     return await this.reviewModel.countDocuments({
@@ -1276,11 +1259,9 @@ Subset 패턴을 도입하여 상품 도큐먼트에 5개의 최신 리뷰들을
   }
 ```
 
-### 이미지 파일 업로드 - POST /image/upload
+### POST /image/upload (이미지 파일 업로드)
 
-**image.controller.ts**
-
-```ts
+```ts title="image.controller.ts"
 @UseGuards(JwtAuthGuard)
   @Post('upload')
   @UseInterceptors(FileInterceptor('image'))
@@ -1292,9 +1273,7 @@ Subset 패턴을 도입하여 상품 도큐먼트에 5개의 최신 리뷰들을
   }
 ```
 
-**image.service.ts**
-
-```ts
+```ts title="image.service.ts"
 constructor() {
     this.awsS3 = new AWS.S3({
       accessKeyId: process.env.AWS_ACCESS_KEY_ID,

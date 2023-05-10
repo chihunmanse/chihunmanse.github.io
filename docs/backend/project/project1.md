@@ -5,6 +5,7 @@ sidebar_position: 1
 # LUSH Clone Project
 
 **기간: 2021-10-10 ~ 2021-10-29**
+**Stack: Python, Django, MySQL, DjangoORM**
 
 **[Github 링크](https://github.com/chihunmanse/LUSH-motive-Project)**
 
