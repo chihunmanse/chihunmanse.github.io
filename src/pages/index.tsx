@@ -12,26 +12,25 @@ function HomepageHeader() {
   return (
     <header className={clsx('hero hero--primary', styles.heroBanner)}>
       <div className="container">
-        <h1 className="hero__title">{"Chihun's Blog"}</h1>
+        <h1 className="hero__title">{"Chihun's Dev Blog"}</h1>
         <p className="hero__subtitle">{siteConfig.tagline}</p>
-        <div className={styles.buttons}>
+        {/* <div className={styles.buttons}>
           <Link
             className="button button--secondary button--lg"
             to="/docs/blockchain/upgradeable-contract/upgradeable1">
-            글 보러 가기
+            Go To Post
           </Link>
-        </div>
+        </div> */}
       </div>
     </header>
   );
 }
 
 export default function Home(): JSX.Element {
-  const {siteConfig} = useDocusaurusContext();
   return (
     <Layout
-      title={`Hello from ${siteConfig.title}`}
-      description="Description will go into a meta tag in <head />">
+      title={""}
+      description="Chihun's Dev Blog">
       <HomepageHeader />
       <main>
         <HomepageFeatures />
