@@ -12,7 +12,7 @@ type FeatureItem = {
 const FeatureList: FeatureItem[] = [
   {
     title: 'BlockChain',
-    image: "https://github-production-user-asset-6210df.s3.amazonaws.com/61782539/241557945-e146005d-7d4f-49db-92b1-135a040d364f.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAIWNJYAX4CSVEH53A%2F20230528%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20230528T115116Z&X-Amz-Expires=300&X-Amz-Signature=8432bad1a31c4cd5b711526ffcd95b1d962761144dd1933fc3e50ffab99efa75&X-Amz-SignedHeaders=host&actor_id=61782539&key_id=0&repo_id=406726783",
+    image: "https://i.ibb.co/xmdMmv7/docs.png",
     link: "/docs/category/upgradeable-contract",
     description: (
       <>
@@ -22,7 +22,7 @@ const FeatureList: FeatureItem[] = [
   },
   {
     title: 'BackEnd',
-    image: "https://github-production-user-asset-6210df.s3.amazonaws.com/61782539/241557945-e146005d-7d4f-49db-92b1-135a040d364f.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAIWNJYAX4CSVEH53A%2F20230528%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20230528T115116Z&X-Amz-Expires=300&X-Amz-Signature=8432bad1a31c4cd5b711526ffcd95b1d962761144dd1933fc3e50ffab99efa75&X-Amz-SignedHeaders=host&actor_id=61782539&key_id=0&repo_id=406726783",
+    image: "https://i.ibb.co/xmdMmv7/docs.png",
     link: "/docs/category/project",
     description: (
       <>
