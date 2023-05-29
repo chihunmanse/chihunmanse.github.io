@@ -1,0 +1,439 @@
+# Contract Error Handling
+
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+먼저 Solidity 안에서 에러를 처리할 수 있는 방식들에 대해 알아보자. Solidity에서 예외를 발생시키는 방식은 크게 **Assert**, **Require**, **Revert**가 있다.
+
+세 가지 방식 모두 현재 호출 및 모든 하위 호출에서 일어났던 상태 변경 사항들을 취소하고 호출자에게 오류 플래그를 지정한다.
+
+만약 하위 호출에서 예외가 발생하면, `try/catch` 명령문 안에서 발견되지 않는 한 자동으로 "버블업" (예외가 다시 발생)된다. 이러한 규칙에 대한 예외는 `call`, `delegatecall`, `staticcall` 과 같은 low-level 함수들이나 `send` 함수를 사용하여 호출 했을 때 뿐이다. 이 경우에는 하위 호출에서 예외가 발생하더라도 예외가 상위 호출로 전달되는 대신 첫번 째 return 값으로 false가 전달된다.
+
+## Assert
+
+Assert는 컨트랙트의 내부 오류를 테스트하고 불변성을 확인하는 데에만 사용해야 한다. 즉 외부의 입력에 따라 어떤 경우에는 Assert 오류가 발생하고 어떤 경우에는 오류가 발생하지 않는 일이 생기면 안 된다. 이런 일이 발생한다는 것은 컨트랙트에 수정해야 할 버그가 존재한다는 뜻이다.
+
+또 한 가지 유의해야할 점은, `assert` 함수를 통해 생성되는 오류는 Solidity 버전에 따라 차이가 있다는 것이다.
+
+### 0.8 버전 이전
+
+0.4.22 ~ 0.7.x 버전에서는 `assert` 함수를 사용했을 때 사용되는 opcode는 `INVALID` 이다.
+
+[INVALID opcode](https://www.evm.codes/#fe?fork=shanghai)에 대한 정보를 살펴보자.
+
+
+```
+스택 매개변수가 0,0인 REVERT (Byzantium 포크 이후)와 동일 하지만 현재 컨텍스트에 제공된 모든 가스가 소비된다는 점만 다릅니다.
+```
+
+즉 Solidity 0.8 버전 이전에는 `assert` 함수를 통해 오류가 생성되더라도 트랜잭션의 가스가 환불되지 않는다. 또 `REVERT(0,0)` 와 동일하기 때문에 컨트랙트 외부에서는 어떤 이유로 해당 오류가 발생했는지 유추할 수 있는 데이터가 존재하지 않는다.
+
+### 0.8 버전 이후
+
+0.8 버전부터 `assert` 함수를 사용했을 때 사용되는 opcode가 `REVERT` 로 변경된다.
+
+[REVERT opcode](https://www.evm.codes/#fd?fork=shanghai)에 대한 정보를 살펴보자.
+
+```
+현재 컨텍스트 실행을 중지하고 상태 변경을 되돌리고(상태 변경 opcode 목록은 STATICCALL 참조) 사용하지 않은 가스를 호출자에게 반환합니다.
+```
+
+`INVALID` opcode와 크게 다른 지점은 사용하지 않은 가스를 호출자에게 반환한다는 점이다. 
+
+```
+호출 컨텍스트의 반환 데이터는 이 컨텍스트의 지정된 메모리 청크로 설정됩니다.
+
+스택 입력
+offset: 메모리의 바이트 오프셋(바이트). 호출 컨텍스트의 반환 데이터입니다.
+size: 복사할 바이트 크기(반환 데이터의 크기).
+```
+
+또 위의 설명처럼 반환 데이터를 지정할 수 있기 때문에, 기존 `INVALID` opcode에서와 달리 컨트랙트 내부에서 어떤 이유로 오류가 발생했는지에 대한 데이터를 제공할 수 있다.
+
+그렇다면 0.8 버전 이후에 `assert` 함수를 사용했을 때 오류에 대한 정보는 어떤 규칙으로 제공되는지를 살펴보자.
+
+`assert` 함수는 `Panic(uint256)` 데이터 유형의 오류를 생성한다. 즉 함수 식별자를 지정하는 방식과 동일하게 "Panic(uint256)"을 keccak256으로 해싱한 데이터의 4바이트 값과 uint256 인자 값을 통해 오류의 정보를 제공한다.
+
+Solidity 공식 문서를 살펴보면, `Panic(uint256)` 오류는 컨트랙트 작성자가 `assert` 함수를 통해 임의로 발생시키는 경우 외에도 미리 지정된 특정 상황들에서 컴파일러에 의해 동일한 오류가 생성될 수 있다고 설명하고 있다.
+
+```
+0x00: 일반 컴파일러 삽입 패닉에 사용됩니다.
+
+0x01: assert(false)로 평가되는 인수로 호출하는 경우.
+
+0x11: 산술 연산 결과 .unchecked { ... } 블록 외부에서 언더플로 또는 오버플로가 발생하는 경우.
+
+0x12: 0으로 나누거나 modulo하는 경우 (e.g. 5 / 0 or 23 % 0).
+
+0x21: 너무 크거나 음수인 값을 열거형으로 변환하는 경우.
+
+0x22: 잘못 인코딩된 스토리지 바이트 배열에 액세스하는 경우.
+
+0x31: 빈 배열에 .pop()을 호출하는 경우.
+
+0x32: 배열 및 배열 슬라이스, bytesN의 범위를 벗어난 인덱스 혹은 음수 인덱스에 액세스하는 경우 (i.e. x[i] where i >= x.length or i < 0).
+
+0x41: 너무 많은 메모리를 할당하거나 너무 큰 배열을 생성한 경우.
+
+0x51: 유효하지 않은 내부 함수 호출.
+```
+
+즉, 언더플로 또는 오버플로가 발생했을 때는 `Panic(uint256)` 의 인자값으로 '0x11'이 사용되며 빈 배열에 `.pop()` 을 호출한 경우에는 인자값으로 '0x31'이 사용되는 식이다. 만약 작성자가 직접 `assert` 함수 식을 사용한 경우에는 '0x01'이 인자값으로 사용된다. 
+
+## Assert Handling
+
+그렇다면 위에서 살펴본 정보를 토대로 컨트랙트를 사용하는 클라이언트 입장에서 Assert 에러를 효율적으로 헨들링할 수 있는 함수를 만들어보자. 
+
+0.8 이후 버전을 기준으로 우리는 Assert 에러가 `Panic(uint256)` 데이터 유형으로 인코딩되어 `REVERT` opcode에 의해 반환된다는 것을 알고 있다. 어셈블리 코드를 통해 EVM 안에서 해당 동작 과정을 자세히 살펴볼 수 있다.
+
+```sol
+  function assertRevertOpcode() external pure {
+        // 0x4e487b71
+        bytes4 panicId = bytes4(keccak256(bytes("Panic(uint256)")));
+
+        assembly {
+            mstore(0x00, panicId)
+            mstore(add(0x00, 4), 0x1)
+            revert(0x00, 36)
+        }
+  }
+```
+
+먼저 `Panic(uint256)` 을 해싱하여 식별 데이터 값을 생성한다. 그리고 해당 데이터를 메모리에 저장하고 (위의 경우 '0x00' 포인터), 그 메모리에 인자값 데이터를 추가한다 (위의 경우 '0x1'로 이 경우 작성자가 assert 함수식을 사용하여 false로 판정된 경우와 동일함). 그리고 `REVERT` opcode를 사용하여 반환 데이터가 담긴 메모리 위치와 반환 데이터의 크기를 입력한다. 
+
+이제 컨트랙트 내부에서 에러 데이터가 어떤 방식으로 반환되는지를 알았으니 외부에서도 역으로 해당 데이터를 디코딩하여 식별할 수 있을 것이다.
+
+```ts
+// method id of 'Panic(uint256)'
+const PANIC_CODE_PREFIX = "0x4e487b71";
+```
+
+가장 먼저 Panic 오류를 식별하기 위한 시그니처 값을 정의한다. 
+
+```ts
+const panicErrorCodeToReason = (errorCode: number): string | undefined => {
+  switch (errorCode) {
+    case 0x1:
+      return "Assertion error";
+    case 0x11:
+      return "Arithmetic operation underflowed or overflowed outside of an unchecked block";
+    case 0x12:
+      return "Division or modulo division by zero";
+    case 0x21:
+      return "Tried to convert a value into an enum, but the value was too big or negative";
+    case 0x22:
+      return "Incorrectly encoded storage byte array";
+    case 0x31:
+      return ".pop() was called on an empty array";
+    case 0x32:
+      return "Array accessed at an out-of-bounds or negative index";
+    case 0x41:
+      return "Too much memory was allocated, or an array was created that is too large";
+    case 0x51:
+      return "Called a zero-initialized variable of internal function type";
+  }
+};
+```
+
+그리고 Panic의 인자값에 따라 사람이 이해할 수 있는 자세한 오류 정보로 바꿔주는 함수를 작성한다.
+
+```ts
+const decodeAssertErrorData = (
+  data: string
+): { panicCode: string; panicDescription: string } => {
+  if (!data.startsWith(PANIC_CODE_PREFIX))
+    return {
+      panicCode: "0x",
+      panicDescription: "not panic error",
+    };
+
+  const encodedReason = data.slice(PANIC_CODE_PREFIX.length);
+
+  let decodePanicCode: number;
+  let panicCode: string;
+  let panicDescription: string;
+
+  try {
+    decodePanicCode = defaultAbiCoder
+      .decode(["uint256"], `0x${encodedReason}`)[0]
+      .toNumber();
+
+    panicCode = `0x${decodePanicCode.toString(16)}`;
+  } catch (e: any) {
+    return {
+      panicCode: "0x",
+      panicDescription: "unknown panic",
+    };
+  }
+
+  panicDescription = panicErrorCodeToReason(decodePanicCode) ?? "unknown panic";
+
+  return { panicCode, panicDescription };
+};
+```
+
+이제 반환된 에러 데이터를 바탕으로 사람이 식별할 수 있게 디코딩해주는 함수를 작성해보자. 이 함수의 경우 에러 데이터가 `Panic(uint256)` 유형의 오류라는 것을 가정하고 있기 때문에, 가장 먼저 반환된 에러 데이터가 `PANIC_CODE_PREFIX` 로 시작하지 않으면 식별할 수 없는 "not panic error"로 return 한다.
+
+`PANIC_CODE_PREFIX` 로 시작한다면, 인자값을 추출하기 위해 에러 데이터를 `PANIC_CODE_PREFIX` 이후로 slice한다. slice한 인자 데이터를 ethers의 `defaultAbiCoder.decode` 유틸 함수를 통해 디코딩하고, 디코딩된 데이터로 `panicErrorCodeToReason` 함수를 통해 자세한 오류 정보를 추출한다.
+
+그럼 작성한 함수를 통해 Assert 관련 에러를 발생시키는 컨트랙트를 호출하여 테스트해보자. 앞서 언급했듯이 Assert 에러는 Solidity 버전에 따라 다른 opcode를 사용한다는 것을 먼저 유념해야한다.
+
+```sol title="contracts/AssertBefore.sol"
+pragma solidity ^0.7.5;
+
+contract AssertBefore {
+    function assert0x1() external pure {
+        assert(false);
+    }
+
+    function assert0x11() external pure {
+        uint256 a = 5;
+        uint256 b = 10;
+
+        a - b;
+    }
+
+    function assert0x12() external pure {
+        uint256 a = 5;
+        uint256 b;
+
+        a / b;
+    }
+
+    enum Enum {
+        A,
+        B
+    }
+
+    function assert0x21() external pure {
+        int256 a = -1;
+        Enum(a);
+    }
+
+    uint256[] public array;
+
+    function assert0x31() external {
+        array.pop();
+    }
+
+    function assert0x32() external view {
+        array[5];
+    }
+
+    function assertRevertOpcode() external pure {
+        // 0x4e487b71
+        bytes4 panicId = bytes4(keccak256(bytes("Panic(uint256)")));
+
+        assembly {
+            mstore(0x00, panicId)
+            mstore(add(0x00, 4), 0x1)
+            revert(0x00, 36)
+        }
+    }
+
+    function assertInvalidOpcode() external pure {
+        assembly {
+            invalid()
+        }
+    }
+}
+```
+
+테스트를 위해 컴파일러에 의해 오류가 발생되는 상황을 재현한 함수들과 직접 `assert` 함수를 통해 오류를 발생시키는 함수가 존재하는 컨트랙트를 0.8 이전 버전으로 작성하였다.
+
+```ts
+ describe("Assert < 0.8", () => {
+    it("Assert Before 0x1", async () => {
+      try {
+        await assertBefore.assert0x1();
+
+        console.log("success");
+      } catch (error: any) {
+        console.log(
+          "assert 0x1 error data:",
+          decodeAssertErrorData(error.data)
+        );
+      }
+    });
+
+    it("Assert Before Revert Opcode", async () => {
+      try {
+        await assertBefore.assertRevertOpcode();
+
+        console.log("success");
+      } catch (error: any) {
+        console.log(
+          "assert revert opcode error data:",
+          decodeAssertErrorData(error.data)
+        );
+      }
+    });
+
+    it("Assert Before Invalid Opcode", async () => {
+      try {
+        await assertBefore.assertInvalidOpcode();
+
+        console.log("success");
+      } catch (error: any) {
+        console.log(
+          "assert invalid opcode error data:",
+          decodeAssertErrorData(error.data)
+        );
+      }
+    });
+
+    it("Assert Before 0x11", async () => {
+      try {
+        const result = await assertBefore.assert0x11();
+
+        console.log("success", result);
+      } catch (error: any) {
+        console.log(
+          "assert 0x11 error data:",
+          decodeAssertErrorData(error.data)
+        );
+      }
+    });
+
+    it("Assert Before 0x12", async () => {
+      try {
+        await assertBefore.assert0x12();
+
+        console.log("success");
+      } catch (error: any) {
+        console.log(
+          "assert 0x12 error data:",
+          decodeAssertErrorData(error.data)
+        );
+      }
+    });
+
+    it("Assert Before 0x21", async () => {
+      try {
+        await assertBefore.assert0x21();
+
+        console.log("success");
+      } catch (error: any) {
+        console.log(
+          "assert 0x21 error data:",
+          decodeAssertErrorData(error.data)
+        );
+      }
+    });
+
+    it("Assert Before 0x31", async () => {
+      try {
+        await assertBefore.assert0x31();
+
+        console.log("success");
+      } catch (error: any) {
+        console.log(
+          "assert 0x31 error data:",
+          decodeAssertErrorData(error.data)
+        );
+      }
+    });
+
+    it("Assert Before 0x32", async () => {
+      try {
+        await assertBefore.assert0x32();
+
+        console.log("success");
+      } catch (error: any) {
+        console.log(
+          "assert 0x32 error data:",
+          decodeAssertErrorData(error.data)
+        );
+      }
+    });
+  });
+  ```
+
+0.8 버전 이전의 컨트랙트를 호출하는 위의 테스트 코드를 실행했을 때 아래와 같은 결과가 나왔다.
+
+```shell
+Assert < 0.8
+assert 0x1 error data: { panicCode: '0x', panicDescription: 'not panic error' }
+      ✔ Assert Before 0x1
+
+assert revert opcode error data: { panicCode: '0x1', panicDescription: 'Assertion error' }
+      ✔ Assert Before Revert Opcode
+
+assert invalid opcode error data: { panicCode: '0x', panicDescription: 'not panic error' }
+      ✔ Assert Before Invalid Opcode
+
+success BigNumber { value: "115792089237316195423570985008687907853269984665640564039457584007913129639931" }
+      ✔ Assert Before 0x11
+
+assert 0x12 error data: { panicCode: '0x', panicDescription: 'not panic error' }
+      ✔ Assert Before 0x12
+
+assert 0x21 error data: { panicCode: '0x', panicDescription: 'not panic error' }
+      ✔ Assert Before 0x21
+
+assert 0x31 error data: { panicCode: '0x', panicDescription: 'not panic error' }
+      ✔ Assert Before 0x31
+
+assert 0x32 error data: { panicCode: '0x', panicDescription: 'not panic error' }
+      ✔ Assert Before 0x32
+```
+
+0.8 버전 이전에는 `INVALID` opcode가 사용되고, 해당 opcode는 `REVERT(0,0)` 와 가스 환불 지점을 제외하면 동일하기 때문에 대부분의 케이스들이 위에서 작성한 디코딩 함수의 첫번 째 if 문에 걸리는 것을 볼 수 있다 (에러 데이터가 그냥 "0x"이므로). 다만 두번 째 테스트 케이스에서는 정상적으로 디코딩이 되었는데, 해당 케이스에서는 `REVERT` opcode를 사용하는 `assertRevertOpcode()` 함수를 호출했기 때문이다.
+
+또 한 가지 특이한 지점은 "0x11" (오버플로 및 언더플로 발생) 테스트 케이스의 경우 에러가 나지 않고 정상적으로 함수가 동작했다는 것이다. 그 이유는 오버플로 및 언더플로가 발생했을 때 Solidity에서 오류를 발생시키는 것은 0.8 버전 이후부터이기 때문이다. 따라서 < 0.8 버전인 해당 컨트랙트에서는 오류가 발생하지 않고 언더플로가 발생된 값이 그대로 리턴된 것이다.
+
+그럼 0.8 버전 이후의 컨트랙트를 테스트 해보자. 위와 동일한 코드의 컨트랙트를 버전만 바꿔서 테스트 코드를 실행했을 때 결과는 아래와 같다.
+
+```shell
+Assert >= 0.8
+assert 0x1 error data: { panicCode: '0x1', panicDescription: 'Assertion error' }
+      ✔ Assert 0x1
+
+assert revert opcode error data: { panicCode: '0x1', panicDescription: 'Assertion error' }
+      ✔ Assert Revert Opcode
+
+assert invalid opcode error data: { panicCode: '0x', panicDescription: 'not panic error' }
+      ✔ Assert Invalid Opcode
+
+assert 0x11 error data: {
+  panicCode: '0x11',
+  panicDescription: 'Arithmetic operation underflowed or overflowed outside of an unchecked block'}
+      ✔ Assert 0x11
+
+assert 0x12 error data: {
+  panicCode: '0x12',
+  panicDescription: 'Division or modulo division by zero'}
+      ✔ Assert 0x12
+
+assert 0x21 error data: {
+  panicCode: '0x21',
+  panicDescription: 'Tried to convert a value into an enum, but the value was too big or negative'}
+      ✔ Assert 0x21
+
+assert 0x31 error data: {
+  panicCode: '0x31',
+  panicDescription: '.pop() was called on an empty array'}
+      ✔ Assert 0x31
+
+assert 0x32 error data: {
+  panicCode: '0x32',
+  panicDescription: 'Array accessed at an out-of-bounds or negative index'}
+      ✔ Assert 0x32
+```
+
+테스트 결과를 살펴보면, 고의적으로 `INVALID` opcode를 사용한 `assertInvalidOpcode()` 함수를 제외하고는 모두 정상적으로 에러 데이터가 디코딩된 것을 볼 수 있다.
+
+특히 0.8 이전 컨트랙트에서는 오류가 발생되지 않았던 "0x11" 코드의 경우에도 정상적으로 오류가 발생된 것을 볼 수 있다. 만약 해당 산술 연산 코드를 `unchecked{}` 블록 안에서 수행했다면 0.8 이전 컨트랙트의 경우처럼 오류가 발생하지 않고 언더플로가 발생한 값이 리턴됐을 것이다. 
+
+여담이지만, 오버플로 및 언더플로를 0.8 버전 이후부터는 기존 SafeMath와 같은 라이브러리를 사용하여 직접 체크해주지 않아도 Solidity에서 기본적으로 체크해준다는 것은 분명 용이한 지점이지만 그 말은 곧 오버플로 및 언더플로가 발생할 가능성이 없는 산술 연산(대표적으로 반복문에서 사용되는 변수에 대한 덧셈 및 뺄셈 연산)에서도 해당 오류를 체크하는 오버헤드가 발생할 수 있다는 것을 의미한다. 때문에 상황에 따라 적절하게 `unchecked{}` 블록을 사용하는 것이 불필요한 오버헤드를 줄일 수 있는 방법이다.
+
+
+## Revert & Require
+
+작성중...
+
+## Revert & Require Handling
+
+## Custom Error
+
+## Custom Error Handling
