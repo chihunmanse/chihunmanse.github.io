@@ -21,7 +21,6 @@ Assert는 컨트랙트의 내부 오류를 테스트하고 불변성을 확인�
 
 [INVALID opcode](https://www.evm.codes/#fe?fork=shanghai)에 대한 정보를 살펴보자.
 
-
 ```
 스택 매개변수가 0,0인 REVERT (Byzantium 포크 이후)와 동일 하지만 현재 컨텍스트에 제공된 모든 가스가 소비된다는 점만 다릅니다.
 ```
@@ -38,7 +37,7 @@ Assert는 컨트랙트의 내부 오류를 테스트하고 불변성을 확인�
 현재 컨텍스트 실행을 중지하고 상태 변경을 되돌리고(상태 변경 opcode 목록은 STATICCALL 참조) 사용하지 않은 가스를 호출자에게 반환합니다.
 ```
 
-`INVALID` opcode와 크게 다른 지점은 사용하지 않은 가스를 호출자에게 반환한다는 점이다. 
+`INVALID` opcode와 크게 다른 지점은 사용하지 않은 가스를 호출자에게 반환한다는 점이다.
 
 ```
 호출 컨텍스트의 반환 데이터는 이 컨텍스트의 지정된 메모리 청크로 설정됩니다.
@@ -78,11 +77,11 @@ Solidity 공식 문서를 살펴보면, `Panic(uint256)` 오류는 컨트랙트 
 0x51: 유효하지 않은 내부 함수 호출.
 ```
 
-즉, 언더플로 또는 오버플로가 발생했을 때는 `Panic(uint256)` 의 인자값으로 '0x11'이 사용되며 빈 배열에 `.pop()` 을 호출한 경우에는 인자값으로 '0x31'이 사용되는 식이다. 만약 작성자가 직접 `assert` 함수 식을 사용한 경우에는 '0x01'이 인자값으로 사용된다. 
+즉, 언더플로 또는 오버플로가 발생했을 때는 `Panic(uint256)` 의 인자값으로 '0x11'이 사용되며 빈 배열에 `.pop()` 을 호출한 경우에는 인자값으로 '0x31'이 사용되는 식이다. 만약 작성자가 직접 `assert` 함수 식을 사용한 경우에는 '0x01'이 인자값으로 사용된다.
 
 ## Assert Handling
 
-그렇다면 위에서 살펴본 정보를 토대로 컨트랙트를 사용하는 클라이언트 입장에서 Assert 에러를 효율적으로 헨들링할 수 있는 함수를 만들어보자. 
+그렇다면 위에서 살펴본 정보를 토대로 컨트랙트를 사용하는 클라이언트 입장에서 Assert 에러를 효율적으로 헨들링할 수 있는 함수를 만들어보자.
 
 0.8 이후 버전을 기준으로 우리는 Assert 에러가 `Panic(uint256)` 데이터 유형으로 인코딩되어 `REVERT` opcode에 의해 반환된다는 것을 알고 있다. 어셈블리 코드를 통해 EVM 안에서 해당 동작 과정을 자세히 살펴볼 수 있다.
 
@@ -99,7 +98,7 @@ Solidity 공식 문서를 살펴보면, `Panic(uint256)` 오류는 컨트랙트 
   }
 ```
 
-먼저 `Panic(uint256)` 을 해싱하여 식별 데이터 값을 생성한다. 그리고 해당 데이터를 메모리에 저장하고 (위의 경우 '0x00' 포인터), 그 메모리에 인자값 데이터를 추가한다 (위의 경우 '0x1'로 이 경우 작성자가 assert 함수식을 사용하여 false로 판정된 경우와 동일함). 그리고 `REVERT` opcode를 사용하여 반환 데이터가 담긴 메모리 위치와 반환 데이터의 크기를 입력한다. 
+먼저 `Panic(uint256)` 을 해싱하여 식별 데이터 값을 생성한다. 그리고 해당 데이터를 메모리에 저장하고 (위의 경우 '0x00' 포인터), 그 메모리에 인자값 데이터를 추가한다 (위의 경우 '0x1'로 이 경우 작성자가 assert 함수식을 사용하여 false로 판정된 경우와 동일함). 그리고 `REVERT` opcode를 사용하여 반환 데이터가 담긴 메모리 위치와 반환 데이터의 크기를 입력한다.
 
 이제 컨트랙트 내부에서 에러 데이터가 어떤 방식으로 반환되는지를 알았으니 외부에서도 역으로 해당 데이터를 디코딩하여 식별할 수 있을 것이다.
 
@@ -108,7 +107,7 @@ Solidity 공식 문서를 살펴보면, `Panic(uint256)` 오류는 컨트랙트 
 const PANIC_CODE_PREFIX = "0x4e487b71";
 ```
 
-가장 먼저 Panic 오류를 식별하기 위한 시그니처 값을 정의한다. 
+가장 먼저 Panic 오류를 식별하기 위한 시그니처 값을 정의한다.
 
 ```ts
 const panicErrorCodeToReason = (errorCode: number): string | undefined => {
@@ -242,112 +241,94 @@ contract AssertBefore {
 테스트를 위해 컴파일러에 의해 오류가 발생되는 상황을 재현한 함수들과 직접 `assert` 함수를 통해 오류를 발생시키는 함수가 존재하는 컨트랙트를 0.8 이전 버전으로 작성하였다.
 
 ```ts
- describe("Assert < 0.8", () => {
-    it("Assert Before 0x1", async () => {
-      try {
-        await assertBefore.assert0x1();
+describe("Assert < 0.8", () => {
+  it("Assert Before 0x1", async () => {
+    try {
+      await assertBefore.assert0x1();
 
-        console.log("success");
-      } catch (error: any) {
-        console.log(
-          "assert 0x1 error data:",
-          decodeAssertErrorData(error.data)
-        );
-      }
-    });
-
-    it("Assert Before Revert Opcode", async () => {
-      try {
-        await assertBefore.assertRevertOpcode();
-
-        console.log("success");
-      } catch (error: any) {
-        console.log(
-          "assert revert opcode error data:",
-          decodeAssertErrorData(error.data)
-        );
-      }
-    });
-
-    it("Assert Before Invalid Opcode", async () => {
-      try {
-        await assertBefore.assertInvalidOpcode();
-
-        console.log("success");
-      } catch (error: any) {
-        console.log(
-          "assert invalid opcode error data:",
-          decodeAssertErrorData(error.data)
-        );
-      }
-    });
-
-    it("Assert Before 0x11", async () => {
-      try {
-        const result = await assertBefore.assert0x11();
-
-        console.log("success", result);
-      } catch (error: any) {
-        console.log(
-          "assert 0x11 error data:",
-          decodeAssertErrorData(error.data)
-        );
-      }
-    });
-
-    it("Assert Before 0x12", async () => {
-      try {
-        await assertBefore.assert0x12();
-
-        console.log("success");
-      } catch (error: any) {
-        console.log(
-          "assert 0x12 error data:",
-          decodeAssertErrorData(error.data)
-        );
-      }
-    });
-
-    it("Assert Before 0x21", async () => {
-      try {
-        await assertBefore.assert0x21();
-
-        console.log("success");
-      } catch (error: any) {
-        console.log(
-          "assert 0x21 error data:",
-          decodeAssertErrorData(error.data)
-        );
-      }
-    });
-
-    it("Assert Before 0x31", async () => {
-      try {
-        await assertBefore.assert0x31();
-
-        console.log("success");
-      } catch (error: any) {
-        console.log(
-          "assert 0x31 error data:",
-          decodeAssertErrorData(error.data)
-        );
-      }
-    });
-
-    it("Assert Before 0x32", async () => {
-      try {
-        await assertBefore.assert0x32();
-
-        console.log("success");
-      } catch (error: any) {
-        console.log(
-          "assert 0x32 error data:",
-          decodeAssertErrorData(error.data)
-        );
-      }
-    });
+      console.log("success");
+    } catch (error: any) {
+      console.log("assert 0x1 error data:", decodeAssertErrorData(error.data));
+    }
   });
-  ```
+
+  it("Assert Before Revert Opcode", async () => {
+    try {
+      await assertBefore.assertRevertOpcode();
+
+      console.log("success");
+    } catch (error: any) {
+      console.log(
+        "assert revert opcode error data:",
+        decodeAssertErrorData(error.data)
+      );
+    }
+  });
+
+  it("Assert Before Invalid Opcode", async () => {
+    try {
+      await assertBefore.assertInvalidOpcode();
+
+      console.log("success");
+    } catch (error: any) {
+      console.log(
+        "assert invalid opcode error data:",
+        decodeAssertErrorData(error.data)
+      );
+    }
+  });
+
+  it("Assert Before 0x11", async () => {
+    try {
+      const result = await assertBefore.assert0x11();
+
+      console.log("success", result);
+    } catch (error: any) {
+      console.log("assert 0x11 error data:", decodeAssertErrorData(error.data));
+    }
+  });
+
+  it("Assert Before 0x12", async () => {
+    try {
+      await assertBefore.assert0x12();
+
+      console.log("success");
+    } catch (error: any) {
+      console.log("assert 0x12 error data:", decodeAssertErrorData(error.data));
+    }
+  });
+
+  it("Assert Before 0x21", async () => {
+    try {
+      await assertBefore.assert0x21();
+
+      console.log("success");
+    } catch (error: any) {
+      console.log("assert 0x21 error data:", decodeAssertErrorData(error.data));
+    }
+  });
+
+  it("Assert Before 0x31", async () => {
+    try {
+      await assertBefore.assert0x31();
+
+      console.log("success");
+    } catch (error: any) {
+      console.log("assert 0x31 error data:", decodeAssertErrorData(error.data));
+    }
+  });
+
+  it("Assert Before 0x32", async () => {
+    try {
+      await assertBefore.assert0x32();
+
+      console.log("success");
+    } catch (error: any) {
+      console.log("assert 0x32 error data:", decodeAssertErrorData(error.data));
+    }
+  });
+});
+```
 
 0.8 버전 이전의 컨트랙트를 호출하는 위의 테스트 코드를 실행했을 때 아래와 같은 결과가 나왔다.
 
@@ -423,14 +404,13 @@ assert 0x32 error data: {
 
 테스트 결과를 살펴보면, 고의적으로 `INVALID` opcode를 사용한 `assertInvalidOpcode()` 함수를 제외하고는 모두 정상적으로 에러 데이터가 디코딩된 것을 볼 수 있다.
 
-특히 0.8 이전 컨트랙트에서는 오류가 발생되지 않았던 "0x11" 코드의 경우에도 정상적으로 오류가 발생된 것을 볼 수 있다. 만약 해당 산술 연산 코드를 `unchecked{}` 블록 안에서 수행했다면 0.8 이전 컨트랙트의 경우처럼 오류가 발생하지 않고 언더플로가 발생한 값이 리턴됐을 것이다. 
+특히 0.8 이전 컨트랙트에서는 오류가 발생되지 않았던 "0x11" 코드의 경우에도 정상적으로 오류가 발생된 것을 볼 수 있다. 만약 해당 산술 연산 코드를 `unchecked{}` 블록 안에서 수행했다면 0.8 이전 컨트랙트의 경우처럼 오류가 발생하지 않고 언더플로가 발생한 값이 리턴됐을 것이다.
 
 여담이지만, 오버플로 및 언더플로를 0.8 버전 이후부터는 기존 SafeMath와 같은 라이브러리를 사용하여 직접 체크해주지 않아도 Solidity에서 기본적으로 체크해준다는 것은 분명 용이한 지점이지만 그 말은 곧 오버플로 및 언더플로가 발생할 가능성이 없는 산술 연산(대표적으로 반복문에서 사용되는 변수에 대한 덧셈 및 뺄셈 연산)에서도 해당 오류를 체크하는 오버헤드가 발생할 수 있다는 것을 의미한다. 때문에 상황에 따라 적절하게 `unchecked{}` 블록을 사용하는 것이 불필요한 오버헤드를 줄일 수 있는 방법이다.
 
-
 ## Revert & Require
 
-작성중...
+작성중....!
 
 ## Revert & Require Handling
 
