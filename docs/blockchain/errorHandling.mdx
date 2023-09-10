@@ -410,7 +410,33 @@ assert 0x32 error data: {
 
 ## Revert & Require
 
-작성중....!
+위에서 살펴본 `assert` 함수, 즉 `Panic(uint256)` 데이터 유형으로 반환되지 않는 에러는 `Error(string)` 데이터 유형으로 반환되거나 에러 데이터 없이 `REVERT(0,0)` 로 반환된다.
+
+솔리디티 공식 문서에는 아래 상황들에서 `Error(string)` 데이터 유형의 `REVERT` 혹은 데이터 없는 `REVERT` 가 생성된다고 설명하고 있다.
+
+```
+1. Calling require(x) where x evaluates to false.
+   : require 호출식이 false로 평가되는 경우
+
+2. If you use revert() or revert("description").
+   : revert() 혹은 revert(에러 메세지)가 호출되는 경우
+
+3. If you perform an external function call targeting a contract that contains no code.
+   : 코드가 존재하지 않는 컨트랙트로 함수를 호출하는 경우
+
+4. If your contract receives Ether via a public function without payable modifier (including the constructor and the fallback function).
+   : payable 수정자가 없는 공개 함수가 Ether를 수신하는 경우
+
+5. If your contract receives Ether via a public getter function.
+   : getter 공개 함수가 Ether를 수신하는 경우
+
+```
+
+즉 `require` 함수는 호출식 안의 조건이 false로 평가되는 경우, `revert` 함수는 호출 그 자체로 예외를 발생시킨다고 볼 수 있다. 그리고 `assert` 함수와는 다르게 계약 작성자가 필요에 따라 에러에 대한 메세지를 전달할 수 있다.
+
+물론 `revert` 와 `require` 함수 모두 `REVERT` opcode를 사용하고 있기 때문에 해당 함수들을 통해 예외를 발생시켰을 때 사용되지 않은 가스는 환불된다.
+
+정리하자면, 입력된 에러 메세지가 존재하지 않을 때 두 함수는 `REVERT(0,0)` opcode와 동일하며 에러 메세지가 포함된 경우에는 `Error(string)` 데이터 유형으로 인코딩 되어 `REVERT(offset, size)` opcode를 통해 반환되는 것이다.
 
 ## Revert & Require Handling
 
