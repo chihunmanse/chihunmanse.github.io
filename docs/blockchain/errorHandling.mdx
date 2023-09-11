@@ -91,14 +91,14 @@ Solidity 공식 문서를 살펴보면, `Panic(uint256)` 오류는 컨트랙트 
         bytes4 panicId = bytes4(keccak256(bytes("Panic(uint256)")));
 
         assembly {
-            mstore(0x00, panicId)
-            mstore(add(0x00, 4), 0x1)
-            revert(0x00, 36)
+            mstore(0x40, panicId)
+            mstore(add(0x40, 4), 0x1)
+            revert(0x40, 36)
         }
   }
 ```
 
-먼저 `Panic(uint256)` 을 해싱하여 식별 데이터 값을 생성한다. 그리고 해당 데이터를 메모리에 저장하고 (위의 경우 '0x00' 포인터), 그 메모리에 인자값 데이터를 추가한다 (위의 경우 '0x1'로 이 경우 작성자가 assert 함수식을 사용하여 false로 판정된 경우와 동일함). 그리고 `REVERT` opcode를 사용하여 반환 데이터가 담긴 메모리 위치와 반환 데이터의 크기를 입력한다.
+먼저 `Panic(uint256)` 을 해싱하여 식별 데이터 값을 생성한다. 그리고 해당 데이터를 메모리에 저장하고 (위의 경우 '0x40' 포인터), 그 메모리에 인자값 데이터를 추가한다 (위의 경우 '0x1'로 이 경우 작성자가 assert 함수식을 사용하여 false로 판정된 경우와 동일함). 그리고 `REVERT` opcode를 사용하여 반환 데이터가 담긴 메모리 위치와 반환 데이터의 크기를 입력한다.
 
 이제 컨트랙트 내부에서 에러 데이터가 어떤 방식으로 반환되는지를 알았으니 외부에서도 역으로 해당 데이터를 디코딩하여 식별할 수 있을 것이다.
 
@@ -224,9 +224,9 @@ contract AssertBefore {
         bytes4 panicId = bytes4(keccak256(bytes("Panic(uint256)")));
 
         assembly {
-            mstore(0x00, panicId)
-            mstore(add(0x00, 4), 0x1)
-            revert(0x00, 36)
+            mstore(0x40, panicId)
+            mstore(add(0x40, 4), 0x1)
+            revert(0x40, 36)
         }
     }
 
@@ -439,6 +439,39 @@ assert 0x32 error data: {
 정리하자면, 입력된 에러 메세지가 존재하지 않을 때 두 함수는 `REVERT(0,0)` opcode와 동일하며 에러 메세지가 포함된 경우에는 `Error(string)` 데이터 유형으로 인코딩 되어 `REVERT(offset, size)` opcode를 통해 반환되는 것이다.
 
 ## Revert & Require Handling
+
+Assert 에러와 마찬가지로, 외부에서 컨트랙트 함수를 호출할 때 Revert 및 Require 에러를 헨들링할 수 있는 함수를 만들어보자.
+
+위에서 살펴본 것처럼, `revert` 와 `require` 함수에 에러 메세지가 포함되어있다면 해당 메세지는 `Error(string)` 함수와 동일한 데이터 유형으로 인코딩되어 반환된다.
+
+먼저 어셈블리 코드를 통해 EVM 안에서의 동작 과정을 살펴보면 아래와 같다.
+
+```sol
+   function revertByYul() external {
+        // 0x08c379a0
+        bytes4 errorSelector = bytes4(keccak256(bytes("Error(string)")));
+
+        assembly {
+            mstore(0x40, errorSelector)
+            mstore(add(0x40, 4), 32) // data offset
+            mstore(add(0x40, 36), 14) // string length
+            mstore(add(0x40, 68), "revert message")
+            revert(0x40, 100)
+        }
+   }
+```
+
+이번에는 `Panic(uint256)` 대신에 `Error(string)` 을 keccak256으로 해싱한 값의 4바이츠 식별 데이터 값을 생성한 후에 메모리에 저장한다.
+
+Panic 오류의 인자(uint256)가 정적 유형인 것과 다르게 Error 오류의 인자(string)는 동적 유형으로 구성되어있다. 따라서 솔리디티에서 동적 유형의 데이터를 인코딩하는 방식을 참고하여 정해진 방식에 따라 데이터를 반환해주어야 한다.
+
+[solidity abi-spec use of dynamic types](https://docs.soliditylang.org/en/v0.8.21/abi-spec.html#use-of-dynamic-types) 해당 문서를 참고하여 동적 유형의 인자가 포함된 함수의 인코딩 방식을 간단하게 살펴보자.
+
+정적 유형 인자의 경우, 함수 식별값으로 사용되는 4바이츠 시그니처 값 이후에 매개변수의 순서에 따라 인자 데이터가 바로 담기면 되지만 동적 유형 인자의 경우 인자 블록의 시작 부분(함수 시그니처 값 이후)을 기준으로 해당 파라미터의 인자 데이터가 시작되는 위치(offset)을 바이츠 단위로 측정하여 먼저 담는다.
+
+[solidity layout in memory](https://docs.soliditylang.org/en/latest/internals/layout_in_memory.html#layout-in-memory) 문서를 참고했을 때, 솔리디티의 메모리 배열 요소는 항상 32바이츠의 배수를 차지한다.
+
+따라서 `Error(string)`의 4바이츠 시그니처값 이후 인자 블록을 기준으로 string 타입의 인자 데이터는 offset 데이터가 담긴 이후 시작되기 때문에 32바이츠이다.
 
 ## Custom Error
 
