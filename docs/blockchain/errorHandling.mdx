@@ -466,12 +466,163 @@ Assert 에러와 마찬가지로, 외부에서 컨트랙트 함수를 호출할 
 Panic 오류의 인자(uint256)가 정적 유형인 것과 다르게 Error 오류의 인자(string)는 동적 유형으로 구성되어있다. 따라서 솔리디티에서 동적 유형의 데이터를 인코딩하는 방식을 참고하여 정해진 방식에 따라 데이터를 반환해주어야 한다.
 
 [solidity abi-spec use of dynamic types](https://docs.soliditylang.org/en/v0.8.21/abi-spec.html#use-of-dynamic-types) 해당 문서를 참고하여 동적 유형의 인자가 포함된 함수의 인코딩 방식을 간단하게 살펴보자.
-
-정적 유형 인자의 경우, 함수 식별값으로 사용되는 4바이츠 시그니처 값 이후에 매개변수의 순서에 따라 인자 데이터가 바로 담기면 되지만 동적 유형 인자의 경우 인자 블록의 시작 부분(함수 시그니처 값 이후)을 기준으로 해당 파라미터의 인자 데이터가 시작되는 위치(offset)을 바이츠 단위로 측정하여 먼저 담는다.
+정적 유형 인자의 경우, 함수 식별값으로 사용되는 4바이츠 시그니처 값 이후에 매개변수의 순서에 따라 인자 데이터가 바로 담기면 되지만 동적 유형 인자의 경우 인자 블록의 시작 부분(함수 시그니처 값 이후)을 기준으로 해당 파라미터의 인자 데이터가 시작되는 위치(offset)를 바이츠 단위로 측정하여 먼저 담는다.
 
 [solidity layout in memory](https://docs.soliditylang.org/en/latest/internals/layout_in_memory.html#layout-in-memory) 문서를 참고했을 때, 솔리디티의 메모리 배열 요소는 항상 32바이츠의 배수를 차지한다.
+따라서 `Error(string)`의 4바이츠 시그니처값 이후 인자 블록을 기준으로 string 타입의 인자 데이터는 offset 데이터가 담긴 이후 시작되기 때문에 32바이츠가 된다.
 
-따라서 `Error(string)`의 4바이츠 시그니처값 이후 인자 블록을 기준으로 string 타입의 인자 데이터는 offset 데이터가 담긴 이후 시작되기 때문에 32바이츠이다.
+동적 유형 인자 데이터의 시작 위치를 알리는 데이터 이후에는 해당 인자 데이터의 바이츠 길이를 담으면 된다. 위 예시 코드에서는 'revert message'의 길이인 14를 입력해주었다.
+offset과 length 데이터를 담은 이후에 오류와 함께 전달하려는 string 데이터를 입력하면 된다.
+
+이제 솔리디티 내부에서 `Error(string)` 유형의 에러 데이터가 인코딩 되는 방식을 알았으니 외부에서 해당 데이터를 디코딩하여 식별하는 방법을 알아보자.
+
+```ts
+    // method id of 'Error(string)'
+    const ERROR_STRING_PREFIX = "0x08c379a0";
+```
+
+먼저 `Error(string)`을 식별하기 위한 4바이츠의 시그니처 값이 필요하다.
+
+```ts
+    const decodeErrorData = (data: string) => {
+    if (data === "0x") {
+        return {kind: "Empty"};
+    } else if (data.startsWith(ERROR_STRING_PREFIX)) {
+        const encodedReason = data.slice(ERROR_STRING_PREFIX.length);
+
+        const reason = defaultAbiCoder.decode(["string"], `0x${encodedReason}`)[0];
+
+        return {
+        kind: "Error",
+        reason,
+        };
+      }
+    }
+```
+
+반환되는 에러 데이터를 디코딩하여 외부에서 식별할 수 있게 하는 함수를 작성해보자. 위의 함수에서는 에러 데이터가 존재하지 않으면 (`REVERT(0,0)` 로 반환된 경우) "Empty" 종류로 반환되며, 위에서 정의했던 ERROR_STRING_PREFIX 로 시작되는 경우 string 타입의 인자값을 디코딩하여 함께 반환해준다.
+
+Assert와 마찬가지로 디코딩 함수가 제대로 동작하는지 Revert 및 Require 에러를 발생시키는 테스트 컨트랙트를 작성하고 호출해보자.
+
+```sol title="contracts/Revert.sol"
+pragma solidity ^0.8.17;
+
+contract Revert {
+    function revertWithoutMessage() external {
+        revert();
+    }
+
+    function revertWithMessage() external {
+        revert("revert message");
+    }
+
+    function requireWithoutMessage() external {
+        require(false);
+    }
+
+    function requireWithMessage() external {
+        require(false, "require message");
+    }
+
+    function revertByYul() external {
+        // 0x08c379a0
+        bytes4 errorSelector = bytes4(keccak256(bytes("Error(string)")));
+
+        assembly {
+            mstore(0x00, errorSelector)
+            mstore(add(0x00, 4), 32) // data offset
+            mstore(add(0x00, 36), 14) // string length
+            mstore(add(0x00, 68), "revert message")
+            revert(0x00, 100)
+        }
+    }
+}
+```
+
+위의 예시 컨트랙트에서는 `revert` 와 `require` 를 사용해서 각각 에러 메시지가 없는 경우와 존재하는 경우로 오류를 발생시키는 함수를 작성하였고, 마지막으로 어셈블리 코드를 통해 `revert` 오류를 메시지와 함께 발생시키는 함수를 작성하였다.
+
+```ts
+describe("Revert Test", () => {
+  let revert: Contract;
+
+  before(async () => {
+    const Revert = await ethers.getContractFactory("Revert");
+    revert = await Revert.deploy();
+    await revert.deployed();
+  });
+
+  describe("Error", () => {
+    it("Revert Without Message", async () => {
+      try {
+        await revert.revertWithoutMessage();
+
+        console.log("success");
+      } catch (error: any) {
+        console.log("revert without message:", decodeErrorData(error.data));
+      }
+    });
+
+    it("Revert With Message", async () => {
+      try {
+        await revert.revertWithMessage();
+
+        console.log("success");
+      } catch (error: any) {
+        console.log("revert with message:", decodeErrorData(error.data));
+      }
+    });
+
+    it("Require Without Message", async () => {
+      try {
+        await revert.requireWithoutMessage();
+
+        console.log("success");
+      } catch (error: any) {
+        console.log("require without message:", decodeErrorData(error.data));
+      }
+    });
+
+    it("Require With Message", async () => {
+      try {
+        await revert.requireWithMessage();
+
+        console.log("success");
+      } catch (error: any) {
+        console.log("require with message:", decodeErrorData(error.data));
+      }
+    });
+
+    it("Revert By Yul", async () => {
+      try {
+        await revert.revertByYul();
+
+        console.log("success");
+      } catch (error: any) {
+        console.log("revert by yul:", decodeErrorData(error.data));
+      }
+    });
+  });
+});
+```
+
+위의 테스트 코드를 실행했을 때 아래와 같은 결과가 나왔다.
+
+```shell
+Revert Test
+ Error
+revert without message: { kind: 'Empty' }
+      ✔ Revert Without Message (46ms)
+revert with message: { kind: 'Error', reason: 'revert message' }
+      ✔ Revert With Message (45ms)
+require without message: { kind: 'Empty' }
+      ✔ Require Without Message (39ms)
+require with message: { kind: 'Error', reason: 'require message' }
+      ✔ Require With Message (48ms)
+revert by yul: { kind: 'Error', reason: 'revert message' }
+      ✔ Revert By Yul
+```
+
+테스트 결과를 살펴보았을 때, 컨트랙트에 입력된 에러 메세지 그대로 잘 디코딩되어 나오는 것을 확인할 수 있다.
 
 ## Custom Error
 
