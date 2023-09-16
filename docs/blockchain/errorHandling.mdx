@@ -535,11 +535,11 @@ contract Revert {
         bytes4 errorSelector = bytes4(keccak256(bytes("Error(string)")));
 
         assembly {
-            mstore(0x00, errorSelector)
-            mstore(add(0x00, 4), 32) // data offset
-            mstore(add(0x00, 36), 14) // string length
-            mstore(add(0x00, 68), "revert message")
-            revert(0x00, 100)
+            mstore(0x40, errorSelector)
+            mstore(add(0x40, 4), 32) // data offset
+            mstore(add(0x40, 36), 14) // string length
+            mstore(add(0x40, 68), "revert message")
+            revert(0x40, 100)
         }
     }
 }
@@ -632,4 +632,430 @@ revert by yul: { kind: 'Error', reason: 'revert message' }
 
 ## Custom Error
 
+솔리디티 0.8.4 버전부터는 사용자가 직접 에러 타입을 지정하여 기존 string 타입 뿐만 아니라 다양한 타입의 인자를 전달하는 커스텀 에러를 사용할 수 있다.
+
+[Custom Errors in Solidity](https://soliditylang.org/blog/2021/04/21/custom-errors) 해당 문서를 참고하여 커스텀 에러에 대한 자세한 내용을 살펴보자.
+
+커스텀 에러의 장점은 기존 `revert`와 `require` 에서 문자열로 고정적으로만 전달할 수 밖에 없던 에러 정보를 다양한 타입으로 상황에 따라 동적으로 전달 가능하면서도 보다 가스 효율적인 방식을 사용한다는 것이다.
+
+커스텀 에러를 사용하는 방식은 사용자가 필요로 하는 `error` 문을 정의하는 것에서 시작한다.
+
+```sol
+// SPDX-License-Identifier: GPL-3.0
+pragma solidity ^0.8.4;
+
+error Unauthorized();
+
+contract VendingMachine {
+    address payable owner = payable(msg.sender);
+
+    function withdraw() public {
+        if (msg.sender != owner)
+            revert Unauthorized();
+
+        owner.transfer(address(this).balance);
+    }
+    // ...
+}
+```
+
+위의 예시 코드를 보면, `Unauthorized()` 라는 `error` 문을 정의하고, 해당 에러를 `revert` 를 통해 사용하는 것을 볼 수 있다. `error` 구문은 `event` 구문과 유사하며, 아직까지 `require` 함수를 통해서는 사용할 수 없고 오직 `revert` 를 통해서만 사용할 수 있다.
+
+```sol
+// SPDX-License-Identifier: GPL-3.0
+pragma solidity ^0.8.4;
+
+/// Insufficient balance for transfer. Needed `required` but only
+/// `available` available.
+/// @param available balance available.
+/// @param required requested amount to transfer.
+error InsufficientBalance(uint256 available, uint256 required);
+
+contract TestToken {
+    mapping(address => uint) balance;
+    function transfer(address to, uint256 amount) public {
+        if (amount > balance[msg.sender])
+            // Error call using named parameters. Equivalent to
+            // revert InsufficientBalance(balance[msg.sender], amount);
+            revert InsufficientBalance({
+                available: balance[msg.sender],
+                required: amount
+            });
+        balance[msg.sender] -= amount;
+        balance[to] += amount;
+    }
+    // ...
+}
+```
+
+커스텀 에러의 장점으로 다양한 타입의 정보를 상황에 따라 동적으로 전달할 수 있다고 한 것처럼, `error` 구문에는 원하는 타입의 파라미터를 설정하고 상황에 따라 인자를 넣어 에러 정보를 전달할 수 있다.
+
+그렇다면 커스텀 에러를 사용하는 것이 기존의 방식을 사용하는 것보다 어떤 면에서 가스 효율적인지 문서에 언급된 관련 예시 코드를 살펴보자.
+
+```sol
+// revert Unauthorized();
+let free_mem_ptr := mload(64)
+mstore(free_mem_ptr, 0x82b4290000000000000000000000000000000000000000000000000000000000)
+revert(free_mem_ptr, 4)
+
+// revert("Unauthorized");
+let free_mem_ptr := mload(64)
+mstore(free_mem_ptr, 0x08c379a000000000000000000000000000000000000000000000000000000000)
+mstore(add(free_mem_ptr, 4), 32)
+mstore(add(free_mem_ptr, 36), 12)
+mstore(add(free_mem_ptr, 68), "Unauthorized")
+revert(free_mem_ptr, 100)
+```
+
+첫번 째 예시는 `error Unauthorized()` 로 정의된 커스텀 에러를 사용하여 예외를 발생시키는 경우를 어셈블리 코드로 풀어낸 것이고, 두번 째 예시는 기존의 `revert` 함수를 사용해서 "Unauthorized" 메세지를 전달하여 예외를 발생시키는 경우에 대한 어셈블리 코드이다.
+
+`error Unauthorized()` 에 대한 ABI 인코딩 방식은 `Unauthorized()` 함수의 인코딩 방식과 동일하다. 따라서 커스텀 에러의 경우 `Unauthorized()` 함수의 4바이츠 시그니처 값만을 필요로 하지만, 기존 방식을 사용했을 때는 앞서 `revert` 에 대한 인코딩 방식을 살펴본 것처럼 `Error(string)` 함수를 인코딩 하는 과정을 거쳐야 한다.
+
+결과적으로 "Unauthorized" 라는 동일한 정보를 전달하고 있지만 커스텀 에러 방식을 사용하는 것이 비용면에서 효율적인 것을 알 수 있다. 특히 런타임 환경에서는 `revert`의 조건이 충족된 경우에만 두 방식의 차이점이 적용되겠지만 컨트랙트 배포 비용에 있어서는 기본적으로 비용의 차이가 발생한다.
+
 ## Custom Error Handling
+
+그렇다면 이제 커스텀 에러를 외부에서 헨들링할 수 있는 함수를 만들어보자.
+
+커스텀 에러는 미리 정의된 `error` 문에 대해 함수를 인코딩하는 방식과 동일하게 인코딩하여 정보를 전달한다.
+
+예를 들어 `error CustomErrorWithParameter(uint256 param)` 에 대해 `param` 의 값이 1인 예외를 발생시키는 과정은 아래와 같다.
+
+```sol
+    function revertCustomErrorWithParameterByYul() external {
+        bytes4 errorSelector = CustomErrorWithParameter.selector;
+
+        assembly {
+            mstore(0x40, errorSelector)
+            mstore(add(0x40, 4), 1) // param uint256 value 1 padded to 32 bytes
+            revert(0x40, 36)
+        }
+    }
+```
+
+먼저 `CustomErrorWithParameter(uint256 param)` 함수를 식별할 수 있는 4바이츠 시그니처 값을 먼저 담고, `param` 은 정적 유형의 인자이기 때문에 바로 해당 인자의 값인 1을 담아주면 된다.
+
+그럼 외부에서 커스텀 에러를 통해 반환된 데이터를 디코딩하여 식별하는 과정을 살펴보자.
+
+```ts
+const errorIface = new ethers.utils.Interface([
+  "error CustomError()",
+  "error CustomErrorWithParameter(uint256 param)",
+]);
+```
+
+먼저 컨트랙트에 정의된 `error` 구문들을 외부에서 식별할 수 있도록 해당 인터페이스를 생성한다.
+
+```ts
+const decodeErrorData = (data: string) => {
+  const sig = data.slice(0, 10);
+  const error = errorIface.getError(sig);
+
+  return {
+    kind: "Custom",
+    id: sig,
+    name: error.name,
+    data: errorIface.decodeErrorResult(error, data),
+  };
+};
+```
+
+그리고 에러 데이터에서 먼저 함수 시그니처 값을 `slice()` 하여 에러 인터페이스에서 해당 시그니처 값의 에러를 찾은 뒤에 `decodeErrorResult()` 함수를 활용하여 디코딩해준다.
+
+그럼 디코딩 함수가 잘 동작하는지 테스트 컨트랙트를 작성하고 호출해보자.
+
+```sol title="contracts/Revert.sol"
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity ^0.8.17;
+
+contract Revert {
+    error CustomError();
+    error CustomErrorWithParameter(uint256 param);
+
+    function revertCustomError() external {
+        revert CustomError();
+    }
+
+    function revertCustomErrorWithParameter() external {
+        revert CustomErrorWithParameter(1);
+    }
+
+    function revertCustomErrorByYul() external {
+        bytes4 errorSelector = CustomError.selector;
+
+        assembly {
+            mstore(0x40, errorSelector)
+            revert(0x40, 0x04)
+        }
+    }
+
+    function revertCustomErrorWithParameterByYul() external {
+        bytes4 errorSelector = CustomErrorWithParameter.selector;
+
+        assembly {
+            mstore(0x40, errorSelector)
+            mstore(add(0x40, 4), 1) // param uint256 value 1 padded to 32 bytes
+            revert(0x40, 36)
+        }
+    }
+}
+```
+
+위의 예시 컨트랙트에서는 파라미터가 없는 경우와 존재하는 경우의 `error` 를 정의한 후에 해당 에러들을 발생시키는 함수를 각각 작성하였다.
+
+```ts
+describe("Revert Test", () => {
+  let revert: Contract;
+
+  before(async () => {
+    const Revert = await ethers.getContractFactory("Revert");
+    revert = await Revert.deploy();
+    await revert.deployed();
+  });
+
+  describe("Custom Error", () => {
+    it("Revert Custom Error", async () => {
+      try {
+        await revert.revertCustomError();
+
+        console.log("success");
+      } catch (error: any) {
+        console.log("revert custom error:", decodeErrorData(error.data));
+      }
+    });
+
+    it("Revert Custom Error With Parameter", async () => {
+      try {
+        await revert.revertCustomErrorWithParameter();
+
+        console.log("success");
+      } catch (error: any) {
+        console.log(
+          "revert custom error with parameter:",
+          decodeErrorData(error.data)
+        );
+      }
+    });
+
+    it("Revert Custom Error By Yul", async () => {
+      try {
+        await revert.revertCustomErrorByYul();
+
+        console.log("success");
+      } catch (error: any) {
+        console.log("revert custom error by yul:", decodeErrorData(error.data));
+      }
+    });
+
+    it("Revert Custom Error With Parameter By Yul", async () => {
+      try {
+        await revert.revertCustomErrorWithParameterByYul();
+
+        console.log("success");
+      } catch (error: any) {
+        console.log("revert custom error by yul:", decodeErrorData(error.data));
+      }
+    });
+  });
+});
+```
+
+위의 테스트 코드를 실행했을 때 아래와 같은 결과가 나왔다.
+
+```shell
+    Custom Error
+revert custom error: { kind: 'Custom', id: '0x09caebf3', name: 'CustomError', data: [] }
+      ✔ Revert Custom Error
+revert custom error with parameter: {
+  kind: 'Custom',
+  id: '0x241d671b',
+  name: 'CustomErrorWithParameter',
+  data: [ BigNumber { value: "1" }, param: BigNumber { value: "1" } ]
+}
+      ✔ Revert Custom Error With Parameter
+revert custom error by yul: { kind: 'Custom', id: '0x09caebf3', name: 'CustomError', data: [] }
+      ✔ Revert Custom Error By Yul
+revert custom error by yul: {
+  kind: 'Custom',
+  id: '0x241d671b',
+  name: 'CustomErrorWithParameter',
+  data: [ BigNumber { value: "1" }, param: BigNumber { value: "1" } ]
+}
+```
+
+결과를 살펴보았을 때, 발생시킨 커스텀 에러의 이름과 데이터가 작성된 컨트랙트의 코드와 동일하게 디코딩되어 나오는 것을 확인할 수 있다.
+
+<hr />
+
+여기까지 살펴봤을 때, 커스텀 에러에 대한 헨들링은 `assert`, `revert`, `require` 에 대한 헨들링과 비교했을 때 다른 점 한 가지를 발견할 수 있다.
+
+기본적으로 `assert`는 `Panic(uint256)` 유형, `revert` 와 `require` 는 `Error(string)` 의 유형으로 인코딩 되어 반환된다. 때문에 해당 에러들의 인터페이스는 달라지는 경우 없이 고정되어있다. A 컨트랙트에서든 B 컨트랙트에서는 `revert("message")` 로 예외를 발생시켰다면 정해진 `Error(string)` 유형에 따라 인코딩되어 반환된다.
+
+하지만 커스텀 에러는 컨트랙트 작성자가 정의한 `error` 유형에 따라 데이터가 인코딩된다. 따라서 정의된 인터페이스 정보를 갖고 있지 않다면 커스텀 에러로 반환된 에러 데이터를 외부에서 디코딩할 수 없다. 외부에서 컨트랙트와 상호작용하는 방식은 기본적으로 ABI를 통해 이루어지기 때문에 우리는 ABI로 제공되지 않은 컨트랙트의 함수 및 데이터를 식별할 수 없다.
+(여태까지 작성된 디코딩 함수들의 기본적인 흐름을 떠올려보자. 우리는 외부에서 `Panic(uint256)`, `Error(string)`, `CustomError()` 와 같은 인터페이스를 미리 정의해두고, 컨트랙트 내부와 동일한 방식으로 인코딩된 데이터를 컨트랙트에서 반환된 데이터와 비교하는 방식을 사용했다.)
+
+물론 `ethers` 와 같은 라이브러리를 사용했을 때 해당 컨트랙트의 ABI로 인스턴스를 생성하면 기본적으로 커스텀 에러에 대한 인터페이스도 포함되어있을 것이다. 하지만 해당 컨트랙트 함수 안에서 외부의 컨트랙트 함수를 호출했을 때 외부 컨트랙트에서 커스텀 에러를 통해 예외가 발생했다면, 우리의 컨트랙트 ABI 안에 해당 커스텀 에러 인터페이스까지 포함되어있을 경우는 드물기 때문에 해당 에러 정보를 파악하는데 어려움이 생긴다.
+
+따라서 커스텀 에러에 대한 좀 더 원활한 헨들링을 위해서는 작성한 컨트랙트 안에서 상호작용하는 컨트랙트들에 대한 포괄적인 `error` 인터페이스 정보를 구축하는 것이 필요하다. 보통 회사에서 디앱을 구축하는 상황에서는 팀에서 직접 작성한 여러 컨트랙트가 상호작용하는 경우가 많기 때문에, 팀에서 작성한 모든 컨트랙트의 `error` 인터페이스 정보를 기반으로 디코딩 함수를 작성하는 것이 효율적이다.
+
+(* 또한 이 지점에서 한 가지 유의해야할 지점은, 반환된 에러 데이터로는 해당 에러 데이터의 출처가 추적되지 않는다는 점이다. 따라서 외부의 컨트랙트 함수를 호출했을 때, 해당 컨트랙트에서 동일한 커스텀 에러 시그니처를 위조하여 반환함으로써 에러 상황을 위조할 수 있다. 때문에 클라이언트 입장에서 호출한 컨트랙트 함수 안에 검증되지 않는 외부 컨트랙트 함수를 호출하는 로직이 포함되어있다면 미리 정의된 `error` 시그니처를 에러로 반환하더라도 해당 데이터를 완전히 신뢰하여 에러 상황을 유추해서는 안 된다.)
+
+```ts
+import { Interface } from "ethers/lib/utils";
+
+export const getErrorData = (contractInterfaces: Interface[]) => {
+  const errorData = {} as any;
+
+  for (let i = 0; i < contractInterfaces.length; i++) {
+    for (const [signature, value] of Object.entries(
+      contractInterfaces[i].errors
+    )) {
+      const id = ethers.utils.id(signature).slice(0, 10);
+      if (!errorData[id]) {
+        errorData[id] = value.name;
+      }
+    }
+  }
+
+  return errorData;
+};
+```
+
+나의 경우에는 현재 프로젝트에서 파라미터를 포함하는 커스텀 에러를 사용하고 있지 않기 때문에, 위의 함수에서처럼 컨트랙트 인터페이스 배열을 넣어주면 모든 `error` 의 시그니처 값을 key 값으로 갖고 `error` 이름을 value 갖는 object를 생성해주는 함수를 만들어서 사용중이다.
+
+컨트랙트를 배포한 이후에 위 함수를 통해 프로젝트에서 사용하는 모든 컨트랙트에 대한 커스텀 에러 정보를 갖고 있는 object를 생성하는 것이다.
+
+```ts
+const CustomErrorData = {
+  '0x00bfc921': 'InvalidPrice',
+  '0x0c5317cc': 'AlreadyExistTokenContract',
+   // ...
+  '0x3f6cc768': 'InvalidTokenId',
+  '0xb7d09497': 'InvalidTimestamp',
+  '0xba83c474': 'DuplicateAccount',
+};
+
+const customErrorName = CustomErrorData[errorData.slice(0, 10)];
+```
+
+그리고 위의 코드에서처럼 컨트랙트 호출이 필요한 백엔드 및 프론트에서 해당 object를 기반으로 커스텀 에러명을 식별하는 방식을 사용하고 있다. 현재 프로젝트 컨트랙트에서 발생시키는 예외는 모두 커스텀 에러를 사용하고 있기 때문에 이 방식을 사용하면 자체적으로 발생시킨 대부분의 예외에 대해서는 외부에서도 편리하게 식별이 가능하다.
+
+## 정리
+
+이제 마지막으로 에러 종류에 따라 분리되어있던 디코딩 함수를 하나의 함수로 합쳐보자.
+
+```ts
+import { AssertionError } from "assert";
+import { ethers, BigNumber } from "ethers";
+import { defaultAbiCoder } from "ethers/lib/utils";
+
+// method id of 'Error(string)'
+const ERROR_STRING_PREFIX = "0x08c379a0";
+// method id of 'Panic(uint256)'
+const PANIC_CODE_PREFIX = "0x4e487b71";
+const UNKNOWN_ERROR = "Unknown Error";
+
+const panicErrorCodeToReason = (errorCode: BigNumber): string | undefined => {
+  switch (errorCode.toNumber()) {
+    case 0x1:
+      return "Assertion error";
+    case 0x11:
+      return "Arithmetic operation underflowed or overflowed outside of an unchecked block";
+    case 0x12:
+      return "Division or modulo division by zero";
+    case 0x21:
+      return "Tried to convert a value into an enum, but the value was too big or negative";
+    case 0x22:
+      return "Incorrectly encoded storage byte array";
+    case 0x31:
+      return ".pop() was called on an empty array";
+    case 0x32:
+      return "Array accessed at an out-of-bounds or negative index";
+    case 0x41:
+      return "Too much memory was allocated, or an array was created that is too large";
+    case 0x51:
+      return "Called a zero-initialized variable of internal function type";
+  }
+};
+
+const CustomErrorData = {
+  '0x00bfc921': 'InvalidPrice',
+  '0x0c5317cc': 'AlreadyExistTokenContract',
+   // ...
+  '0x3f6cc768': 'InvalidTokenId',
+  '0xb7d09497': 'InvalidTimestamp',
+  '0xba83c474': 'DuplicateAccount',
+};
+
+const decodeErrorData = (error: any): string => {
+     if (!(error instanceof Error)) {
+      return UNKNOWN_ERROR;
+    }
+
+    error = error as any;
+
+    if (error.errorName) {
+      return error.errorName;
+    }
+
+    const errorData =
+      error.data ?? error.error?.data ?? error.error?.error?.error?.data;
+
+    if (errorData === undefined) {
+      return error.message ? error.message : UNKNOWN_ERROR;
+    }
+
+    const returnData =
+      typeof errorData === 'string' ? errorData : errorData.data;
+
+    if (returnData === undefined || typeof returnData !== 'string') {
+      return UNKNOWN_ERROR;
+    } else if (returnData === '0x') {
+      return UNKNOWN_ERROR;
+    } else if (returnData.startsWith(ERROR_STRING_PREFIX)) {
+      const encodedReason = returnData.slice(ERROR_STRING_PREFIX.length);
+      let reason: string;
+
+      try {
+        reason = defaultAbiCoder.decode(['string'], `0x${encodedReason}`)[0];
+      } catch (err) {
+        return UNKNOWN_ERROR;
+      }
+
+      return reason;
+    } else if (returnData.startsWith(PANIC_CODE_PREFIX)) {
+      const encodedReason = returnData.slice(PANIC_CODE_PREFIX.length);
+      let code: BigNumber;
+
+      try {
+        code = defaultAbiCoder.decode(['uint256'], `0x${encodedReason}`)[0];
+      } catch (err) {
+        return UNKNOWN_ERROR;
+      }
+
+      return (
+        panicErrorCodeToReason(code) ?? 'unknown panic code'
+      );
+    }
+
+    const customErrorName = CumstomErrorData[returnData.slice(0, 10)];
+
+    if (customErrorName === undefined) {
+      return UNKNOWN_ERROR;
+    }
+    return customErrorName;
+  }
+};
+```
+
+`decodeErrorData()` 함수는 `ethers` 를 통해 컨트랙트 함수 호출시 에러가 발생했을 때, 반환된 에러를 인자로 받는다. 1차적으로 `error.errorName` 에 값이 있다면 ethers 자체에서 이미 디코딩된 에러 정보가 존재하는 것이기 때문에 그대로 리턴한다.
+
+만약 `errorName` 이 존재하지 않는다면 디코딩할 에러 데이터를 추출하고, 에러 데이터가 없다면 `error.message` 혹은 `UNKNOWN_ERROR` 를 리턴한다.
+
+에러 데이터를 추출한 이후부터는 `Error(string)`, `Panic(uint256)` 유형에 해당하는지에 따라 Revert, Require, Assert 에러에 맞게 데이터를 디코딩하며 위 유형들에 해당하지 않는다면 마지막으로 커스텀 에러인지를 확인한다.
+
+<hr />
+
+이렇게 컨트랙트 내부에서 발생되는 에러의 종류와 특징들에 대해 알아보고, 에러 종류에 따라 외부에서 식별하는 방식을 살펴보았다. 에러에 관한 데이터 또한 기본적으로 ABI 스펙을 기준으로 이루어지기 때문에, 컨트랙트 내부의 에러 상황을 외부에서 원활하게 파악하기 위해서는 역시 컨트랙트 내에서 해당 에러가 발생되는 과정과 데이터가 인코딩되는 방식이 중요하게 고려돼야 한다.
+
+글에서 언급된 예시코드는 [링크](https://github.com/chihunmanse/solidity-error-handling)로 들어가면 볼 수 있고, 직접 테스트 결과를 확인해볼 수 있다.
