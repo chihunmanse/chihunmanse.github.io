@@ -246,7 +246,7 @@ class OrderView(View):
 
 주문을 생성할 때는 입찰에 있는 position 정보를 통해 buyer와 seller를 구분하여 유저를 등록해주고 주문이 완료된 해당 입찰의 상태를 계약완료로 변경해주었다. 마찬가지로 position에 따라 유저의 point도 결제금액만큼 증차감 시켰다.
 
-### GET /orders/size-price/{int:product_id}/{int:position_id} (상품의 사이즈별 즉시 거래가 조회)\*\*
+### GET /orders/size-price/{int:product_id}/{int:position_id} (상품의 사이즈별 즉시 거래가 조회)
 
 ```python
 class SizePriceView(View):
