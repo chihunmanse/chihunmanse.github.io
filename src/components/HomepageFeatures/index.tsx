@@ -23,7 +23,7 @@ const FeatureList: FeatureItem[] = [
     title: "BackEnd",
     image:
       "https://img.freepik.com/free-vector/blue-computer-folder-flat-style_78370-1029.jpg?w=1480&t=st=1693925508~exp=1693926108~hmac=ad08bd883982ec7d0859cc2dd97fdb30328b2c7d277f170eafd0c8be780ab491",
-    link: "/docs/category/project",
+    link: "/docs/category/docker",
     description: (
       <>
         About SQL & NoSQL DataBase, NestJS, Node.js, Typescript, Django, Python
