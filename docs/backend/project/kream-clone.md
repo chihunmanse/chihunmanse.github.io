@@ -176,7 +176,7 @@ class BiddingView(View):
             return JsonResponse({'message' : 'INVALID_BIDDING_POSITION'}, status = 400)
 ```
 
-주문 페이지에서 구매/판매와 상관없이 즉시구매가와 즉시판매가의 정보를 모두 보여준다. path 변수로 `productsize_id`를 받아와서 해당 상품의 정보와 해당 사이즈에 생성돼있는 입찰들에 접근한다. 구매가와 판매가 별로 `annotate()`에서 사용할 filter 조건들을 미리 만들어주었다. 구매가를 구할 때 해당되는 조건은 아직 계왁완료되지 않은 입찰중에 position이 SELL인 경우이고 판매가는 position이 BUY인 경우이다. 구매가는 filter 조건들의 입찰들중에서 가장 낮은 가격의 입찰가를 `Min()`을 통해 가져왔고 판매가는 가장 높은 가격의 입찰가를 `Max()`를 통해 가져왔다.
+주문 페이지에서 구매/판매와 상관없이 즉시구매가와 즉시판매가의 정보를 모두 보여준다. path 변수로 `productsize_id`를 받아와서 해당 상품의 정보와 해당 사이즈에 생성돼있는 입찰들에 접근한다. 구매가와 판매가 별로 `annotate()`에서 사용할 filter 조건들을 미리 만들어주었다. 구매가를 구할 때 해당되는 조건은 아직 계약 완료되지 않은 입찰중에 position이 SELL인 경우이고 판매가는 position이 BUY인 경우이다. 구매가는 filter 조건들의 입찰들중에서 가장 낮은 가격의 입찰가를 `Min()`을 통해 가져왔고 판매가는 가장 높은 가격의 입찰가를 `Max()`를 통해 가져왔다.
 
 `Prefetch()`의 쿼리셋으로 사용할 biddings 쿼리셋을 조건에 맞게 미리 지정해주었다. 입찰상태가 아직 입찰중이고, 요청에서 얻은 position에 해당하는 입찰들중에 position에 따라 낮은 가격순, 높은 가격순으로 정렬되게 했다. 해당 상품 사이즈에 position에 맞는 입찰이 존재하지 않을 수도 있기 때문에 `bidding_set.first()`를 사용할 때 `first()`가 None이면 None이 반환되게 했다. None에 대한 처리를 해주지 않으면 `first()`가 None일때 `bidding_set.first().id` 나 `.price` 처럼 필드에 접근하면 AttributeError가 발생한다.
 
