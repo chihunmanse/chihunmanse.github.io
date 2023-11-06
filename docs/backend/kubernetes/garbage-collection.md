@@ -18,8 +18,7 @@ sidebar_position: 1
 77GB를 사용하고 있는 경로가 `/run/containerd/io.containerd.runtime.v2.task/k8s.io/` 인 것을 봤을 때, 젠킨스 서버와 마찬가지로 이미지 및 컨테이너 데이터가 많은 용량을 차지하고 있다는 것을 추측할 수 있었다.
 
 여기서 많은 용량을 차지하고 있는 디렉토리의 경로가 `/var/lib/docker/overlay2/` 가 아닌 `/run/containerd/io.containerd.runtime.v2.task/k8s.io/` 인 이유는 [쿠버네티스에서는 1.24 버전부터 컨테이너 런타임으로 Dockershim이 아닌 containerd를 사용하기 때문이다.](https://kubernetes.io/ko/docs/setup/production-environment/container-runtimes)
-
-쿠버네티스가 Docker 지원을 중단하고 containerd를 사용하게 된 이유와 맥락은 [이 글](https://www.linkedin.com/pulse/containerd%EB%8A%94-%EB%AC%B4%EC%97%87%EC%9D%B4%EA%B3%A0-%EC%99%9C-%EC%A4%91%EC%9A%94%ED%95%A0%EA%B9%8C-sean-lee/?originalSubdomain=kr)에 잘 설명되어있다.
+(쿠버네티스가 Docker 지원을 중단하고 containerd를 사용하게 된 이유와 맥락은 [이 글](https://www.linkedin.com/pulse/containerd%EB%8A%94-%EB%AC%B4%EC%97%87%EC%9D%B4%EA%B3%A0-%EC%99%9C-%EC%A4%91%EC%9A%94%ED%95%A0%EA%B9%8C-sean-lee/?originalSubdomain=kr)에 잘 설명되어있다.)
 
 워커노드에서는 containerd를 사용하고 있기 때문에, 만약 해당 VM에 접속해서 직접 커맨드를 실행하여 사용하지 않는 이미지 및 컨테이너 데이터를 제거하려면 docker cli가 아닌 ctr 혹은 nerdctl cli를 사용해야만 한다.
 
