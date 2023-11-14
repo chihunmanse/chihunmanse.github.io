@@ -12,20 +12,12 @@ const config = {
   title: "chihunmanse",
   tagline: "",
   favicon: "img/favicon.ico",
-
-  // Set the production url of your site here
   url: `https://${organizationName}.github.io`,
-  // Set the /<baseUrl>/ pathname under which your site is served
-  // For GitHub pages deployment, it is often '/<projectName>/'
   baseUrl: "/",
-
-  // GitHub pages deployment config.
-  // If you aren't using GitHub pages, you don't need these.
   organizationName, // Usually your GitHub org/user name.
   projectName, // Usually your repo name.
   trailingSlash: false,
   deploymentBranch: "main",
-
   onBrokenLinks: "throw",
   onBrokenMarkdownLinks: "warn",
 
@@ -42,14 +34,14 @@ const config = {
       "classic",
       /** @type {import('@docusaurus/preset-classic').Options} */
       ({
-        // docs: {
-        //   sidebarPath: require.resolve("./sidebars.js"),
-        // },
-        docs: false,
-        blog: {routeBasePath: '/', showReadingTime: true},
+        blog: {routeBasePath: '/', showReadingTime: true, postsPerPage: 10, blogSidebarTitle: 'All Posts', blogSidebarCount: 'ALL'},
         theme: {
           customCss: require.resolve("./src/css/custom.css"),
         },
+        docs: false,
+        // docs: {
+        //   sidebarPath: require.resolve("./sidebars.js"),
+        // },
       }),
     ],
   ],
@@ -76,7 +68,8 @@ const config = {
             label: 'Category',
             position: 'right',
             items: [
-              {to: 'tags/backend', label: 'BackEnd'},
+              {to: 'tags/back-end', label: 'BackEnd'},
+              {to: 'tags/block-chain', label: 'BlockChain'}
             ],
           },
 
@@ -87,7 +80,10 @@ const config = {
             position: 'right',
             items: [
               {to: 'tags', label: 'All Tags'},
+              {to: 'tags/solidity', label: 'Solidity'},
+              {to: 'tags/nest-js', label: 'NestJS'},
               {to: 'tags/docker', label: 'Docker'},
+              {to: 'tags/kubernetes', label: 'Kubernetes'}
             ],
           },
 

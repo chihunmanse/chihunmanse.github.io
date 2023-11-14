@@ -2,7 +2,8 @@
 title: 워커노드 디스크 관리하기
 description: 워커노드 디스크 관리하기
 keywords: [docker, container, kubernetes, garbage-collection]
-sidebar_position: 1
+tags: [BackEnd, Kubernetes]
+authors: chihun
 ---
 
 # 워커노드 디스크 관리하기
@@ -14,6 +15,8 @@ sidebar_position: 1
 현재 서비스에서는 2개의 워커노드를 사용하고 있는데 그 중 하나의 노드 디스크 용량이 80% 가량 차 있었다. 자세한 사용량을 파악하기 위해 해당 워커노드에 접속하여 `df-h` 명령어를 실행해보았다.
 
 ![dfh](https://p.ipic.vip/d1deym.png)
+
+<!--truncate-->
 
 77GB를 사용하고 있는 경로가 `/run/containerd/io.containerd.runtime.v2.task/k8s.io/` 인 것을 봤을 때, 젠킨스 서버와 마찬가지로 이미지 및 컨테이너 데이터가 많은 용량을 차지하고 있다는 것을 추측할 수 있었다.
 

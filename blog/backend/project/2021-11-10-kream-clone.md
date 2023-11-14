@@ -1,5 +1,7 @@
 ---
-sidebar_position: 2
+title: Kream Clone Project
+tags: [BackEnd, Django]
+authors: chihun
 ---
 
 # KREAM Clone Project
@@ -32,6 +34,8 @@ kream에서 구매, 판매 계약(주문)은 거래하려는 상품에 입찰이
 - GET /orders/size-price/{int:product_id}/{int:position_id} (상품의 사이즈별 즉시 거래가 조회)
 - GET /orders/price/{int:product_id} (상품의 시세 조회)
 - GET /orders (주문, 입찰중인 내역 조회)
+
+<!--truncate-->
 
 ## Code
 

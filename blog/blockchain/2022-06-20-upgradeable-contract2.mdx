@@ -1,8 +1,9 @@
 ---
-title: 2. ERC1967, TransparentProxy, UUPS
+title: 'Upgradeable Contract 2 - ERC1967, TransparentProxy, UUPS'
 description: writing upgradeable contract with solidity.
 keywords: [solidity, ethereum, contract, blockchain, ERC1967, TransparentProxy, UUPS]
-sidebar_position: 2
+tags: [BlockChain, Solidity]
+authors: chihun
 ---
 
 # 2. ERC1967, TransparentProxy, UUPS
@@ -10,7 +11,7 @@ sidebar_position: 2
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
 
-[이전 글](./1.mdx)에 이어서 프록시 패턴에 대해 본격적으로 살펴보려고 한다.
+[이전 글](./2022-06-10-upgradeable-contract1.mdx)에 이어서 프록시 패턴에 대해 본격적으로 살펴보려고 한다.
 
 프록시 패턴은 기본적으로 delegatecall 과 fallback 함수의 조합을 통해 구현된다.
 
@@ -33,6 +34,8 @@ function() external payable {}
 fallback() external payable {}
 receive() external payable {}
 ```
+
+<!--truncate-->
 
 <hr />
 

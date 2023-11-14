@@ -2,7 +2,8 @@
 title: Docker 기본 개념 정리
 description: Docker 기본 개념 정리
 keywords: [docker, container, kubernetes]
-sidebar_position: 1
+tags: [BackEnd, Docker]
+authors: chihun
 ---
 
 # Docker 기본 개념 정리
@@ -22,6 +23,8 @@ sidebar_position: 1
 - 프로덕션 환경과 똑같은 개발 환경에서 새로 개발되는 코드를 빌드하고 테스트할 수 있다.
 - 함께 개발하는 팀의 멤버들이 같은 프로젝트를 개발할 때 동일환 환경을 보장할 수 있다.
 - 작업 중인 프로젝트가 여러 개인 경우 프로젝트 별 개발 환경을 간편하게 분리할 수 있다.
+
+<!--truncate-->
 
 ### 도커와 가상머신의 차이점
 

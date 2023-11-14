@@ -1,5 +1,7 @@
 ---
-sidebar_position: 1
+title: Lush Clone Project
+tags: [BackEnd, Django]
+authors: chihun
 ---
 
 # LUSH Clone Project
@@ -21,6 +23,8 @@ sidebar_position: 1
 - GET/carts (장바구니 조회)
 - DEL/carts/{int:cart_id} (장바구니 삭제)
 - PATCH/carts/{int:cart_id} (장바구니 수정)
+
+<!--truncate-->
 
 ## Code
 
