@@ -42,10 +42,11 @@ const config = {
       "classic",
       /** @type {import('@docusaurus/preset-classic').Options} */
       ({
-        docs: {
-          sidebarPath: require.resolve("./sidebars.js"),
-        },
-        blog: false,
+        // docs: {
+        //   sidebarPath: require.resolve("./sidebars.js"),
+        // },
+        docs: false,
+        blog: {routeBasePath: '/', showReadingTime: true},
         theme: {
           customCss: require.resolve("./src/css/custom.css"),
         },
@@ -56,81 +57,91 @@ const config = {
   themeConfig:
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
-      colorMode: { defaultMode: "light", disableSwitch: true },
+      colorMode: { defaultMode: "light", disableSwitch: false },
       // Replace with your project's social card
       image: "img/m.png",
       navbar: {
-        title: "Home",
+        title: "Chihunmanse",
+        style: 'primary',
+        hideOnScroll: true,
         logo: {
-          alt: "My Blog Logo",
+          alt: "logo",
           src: "img/dog.png",
         },
-        hideOnScroll: true,
         items: [
+          {to: '/', label: 'Home', position: 'right'},
           {
-            type: "docSidebar",
-            sidebarId: "blockChain",
-            position: "left",
-            label: "BlockChain",
+            type: 'dropdown',
+            to: 'tags',
+            label: 'Category',
+            position: 'right',
+            items: [
+              {to: 'tags/backend', label: 'BackEnd'},
+            ],
           },
+
           {
-            type: "docSidebar",
-            sidebarId: "backEnd",
-            position: "left",
-            label: "BackEnd",
+            type: 'dropdown',
+            to: 'tags',
+            label: 'Tag',
+            position: 'right',
+            items: [
+              {to: 'tags', label: 'All Tags'},
+              {to: 'tags/docker', label: 'Docker'},
+            ],
           },
-          // {to: '/blog', label: 'Blog', position: 'left'},
+
+          {to: 'archive', label: 'Archive', position: 'right'},
           {
             href: "https://github.com/chihunmanse",
             label: "GitHub",
             position: "right",
           },
+          // {
+          //   type: "docSidebar",
+          //   sidebarId: "blockChain",
+          //   position: "left",
+          //   label: "BlockChain",
+          // },
+          // {
+          //   type: "docSidebar",
+          //   sidebarId: "backEnd",
+          //   position: "left",
+          //   label: "BackEnd",
+          // },
         ],
       },
       footer: {
         style: "light",
-        // links: [
-        //   {
-        //     title: 'Docs',
-        //     items: [
-        //       {
-        //         label: 'Tutorial',
-        //         to: '/docs/intro',
-        //       },
-        //     ],
-        //   },
-        //   {
-        //     title: 'Community',
-        //     items: [
-        //       {
-        //         label: 'Stack Overflow',
-        //         href: 'https://stackoverflow.com/questions/tagged/docusaurus',
-        //       },
-        //       {
-        //         label: 'Discord',
-        //         href: 'https://discordapp.com/invite/docusaurus',
-        //       },
-        //       {
-        //         label: 'Twitter',
-        //         href: 'https://twitter.com/docusaurus',
-        //       },
-        //     ],
-        //   },
-        //   {
-        //     title: 'More',
-        //     items: [
-        //       {
-        //         label: 'Blog',
-        //         to: '/blog',
-        //       },
-        //       {
-        //         label: 'GitHub',
-        //         href: 'https://github.com/facebook/docusaurus',
-        //       },
-        //     ],
-        //   },
-        // ],
-        copyright: `Copyright © ${new Date().getFullYear()} Chihunmanse Blog, Inc. Built with Docusaurus.`,
+        links: [
+          {
+            title: 'Blog',
+            items: [
+              {
+                label: 'Home',
+                to: '/',
+              },
+              {
+                label: 'Archive',
+                to: 'archive',
+              },
+              {
+                label: 'Tags',
+                to: 'tags',
+              },
+            ],
+          },
+          {
+            title: 'More',
+            items: [
+              {
+                label: 'GitHub',
+                href: 'https://github.com/chihunmanse',
+              },
+            ],
+          },
+        ],
+        // copyright: `Copyright © ${new Date().getFullYear()} Chihunmanse Blog, Inc. Built with Docusaurus.`,
       },
       prism: {
         theme: lightCodeTheme,
