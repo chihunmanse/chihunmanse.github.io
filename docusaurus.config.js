@@ -83,7 +83,8 @@ const config = {
               {to: 'tags/solidity', label: 'Solidity'},
               {to: 'tags/nest-js', label: 'NestJS'},
               {to: 'tags/docker', label: 'Docker'},
-              {to: 'tags/kubernetes', label: 'Kubernetes'}
+              {to: 'tags/kubernetes', label: 'Kubernetes'},
+              {to: 'tags/data-base', label: 'DataBase'},
             ],
           },
 
