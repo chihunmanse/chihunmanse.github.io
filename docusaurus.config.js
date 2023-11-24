@@ -34,7 +34,9 @@ const config = {
       "classic",
       /** @type {import('@docusaurus/preset-classic').Options} */
       ({
-        blog: {routeBasePath: '/', showReadingTime: true, postsPerPage: 10, blogSidebarTitle: 'All Posts', blogSidebarCount: 'ALL'},
+        blog: {routeBasePath: '/', showReadingTime: true, postsPerPage: 10, blogSidebarTitle: 'All Posts', blogSidebarCount: 'ALL',
+        blogArchiveComponent: require.resolve('./src/theme/BlogArchivePage')
+        },
         theme: {
           customCss: require.resolve("./src/css/custom.css"),
         },
