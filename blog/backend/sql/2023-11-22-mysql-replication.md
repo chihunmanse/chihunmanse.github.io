@@ -115,56 +115,33 @@ MySQL 5.7.7 이전에는 명령문 기반 형식이 기본값이며 MySQL 5.7.7 
 
 사용 중인 데이터베이스에 Master/Slave 복제가 적용되었다는 가정하에 TypeORM을 통해 레플리케이션을 적용하는 방법을 알아보자.
 
-레플리케이션 설정은 TypeOrmModuleOptions의 replication을 지정함으로써 설정 가능하다.
-
 ```typescript
-const env = process.env.NODE_ENV;
-
-const rdsMaster = {
-  host: process.env.MASTER_DB_HOST,
-  port: Number(process.env.MASTER_DB_PORT),
-  database: process.env.MASTER_DB_DATABASE,
-  username: process.env.MASTER_DB_USERNAME,
-  password: process.env.MASTER_DB_PASSWORD,
-};
-
-const rdsRep1 = {
-  host: process.env.REP1_DB_HOST,
-  port: Number(process.env.REP1_DB_PORT),
-  database: process.env.REP1_DB_DATABASE,
-  username: process.env.REP1_DB_USERNAME,
-  password: process.env.REP1_DB_PASSWORD,
-};
-
-const connectionOption: TypeOrmModuleOptions =
-  env === 'dev'
-    ? {
-        type: 'mysql',
-        entities: ENTITIES,
-        keepConnectionAlive: true,
-        charset: 'utf8mb4',
-        synchronize: false,
+{
+    type: "mysql",
         logging: true,
-        namingStrategy: new SnakeNamingStrategy(),
-        maxQueryExecutionTime: 1000,
-        bigNumberStrings: false,
-        ...rdsMaster,
-      }
-    : {
-        type: 'mysql',
-        entities: ENTITIES,
-        keepConnectionAlive: true,
-        charset: 'utf8mb4',
-        synchronize: false,
-        logging: false,
-        namingStrategy: new SnakeNamingStrategy(),
-        maxQueryExecutionTime: 1000,
-        bigNumberStrings: false,
         replication: {
-          master: rdsMaster,
-          slaves: [rdsRep1],
+        master: {
+            host: "server1",
+                port: 3306,
+                username: "test",
+                password: "test",
+                database: "test"
         },
-      };
+        slaves: [{
+            host: "server2",
+            port: 3306,
+            username: "test",
+            password: "test",
+            database: "test"
+        }, {
+            host: "server3",
+            port: 3306,
+            username: "test",
+            password: "test",
+            database: "test"
+        }]
+    }
+}
 ```
 
 레플리케이션 인스턴스와 관련하여 설정할 수 있는 옵션들은 아래와 같다.
