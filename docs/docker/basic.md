@@ -2,8 +2,8 @@
 title: Docker 기본 개념 정리
 description: Docker 기본 개념 정리
 keywords: [docker, container, kubernetes]
-tags: [BackEnd, Docker]
-authors: chihun
+tags: [Docker]
+sidebar_position: 1
 ---
 
 # Docker 기본 개념 정리

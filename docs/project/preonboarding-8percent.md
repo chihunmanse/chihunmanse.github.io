@@ -1,7 +1,7 @@
 ---
 title: 원티드 프리온보딩 8percent 기업과제
-tags: [BackEnd, Django]
-authors: chihun
+tags: [Django]
+sidebar_position: 3
 ---
 
 # 원티드 프리온보딩 8percent 기업과제

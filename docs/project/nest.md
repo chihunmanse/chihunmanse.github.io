@@ -1,7 +1,7 @@
 ---
 title: NestJS & MongoDB Project
-tags: [BackEnd, NestJS]
-authors: chihun
+tags: [NestJS]
+sidebar_position: 4
 ---
 
 # NestJS Project

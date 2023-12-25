@@ -1,7 +1,7 @@
 ---
 title: Lush Clone Project
-tags: [BackEnd, Django]
-authors: chihun
+tags: [Django]
+sidebar_position: 1
 ---
 
 # LUSH Clone Project

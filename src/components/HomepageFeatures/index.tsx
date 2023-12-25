@@ -14,19 +14,19 @@ const FeatureList: FeatureItem[] = [
     title: "BlockChain",
     image:
       "https://img.freepik.com/free-vector/blue-computer-folder-flat-style_78370-1029.jpg?w=1480&t=st=1693925508~exp=1693926108~hmac=ad08bd883982ec7d0859cc2dd97fdb30328b2c7d277f170eafd0c8be780ab491",
-    link: "/docs/category/upgradeable-contract",
+    link: "/category/upgradeable-contract",
     description: (
-      <>About Ethereum, Polygon, Solidity, Hardhat, Ethers.js and more.</>
+      <>About Ethereum, Solidity, Hardhat, Ethers.js and more.</>
     ),
   },
   {
     title: "BackEnd",
     image:
-      "https://img.freepik.com/free-vector/blue-computer-folder-flat-style_78370-1029.jpg?w=1480&t=st=1693925508~exp=1693926108~hmac=ad08bd883982ec7d0859cc2dd97fdb30328b2c7d277f170eafd0c8be780ab491",
-    link: "/docs/category/docker",
+      "https://img.icons8.com/external-tanah-basah-basic-outline-tanah-basah/96/000000/external-programming-coding-tanah-basah-basic-outline-tanah-basah.png",
+    link: "/category/database",
     description: (
       <>
-        About SQL & NoSQL DataBase, NestJS, Node.js, Typescript, Django, Python
+        About SQL & NoSQL DataBase, Docker, NestJS, Node.js, Typescript
         and more.
       </>
     ),

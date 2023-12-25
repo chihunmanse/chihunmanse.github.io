@@ -1,7 +1,7 @@
 ---
 title: MySQL Master/Slave Replication
-tags: [BackEnd, DataBase, MySQL, TypeORM]
-authors: chihun
+tags: [DataBase, MySQL, TypeORM]
+sidebar_position: 1
 ---
 
 ## Master/Slave Replication이란?

@@ -2,8 +2,8 @@
 title: 워커노드 디스크 관리하기
 description: 워커노드 디스크 관리하기
 keywords: [docker, container, kubernetes, garbage-collection]
-tags: [BackEnd, Kubernetes]
-authors: chihun
+tags: [Kubernetes]
+sidebar_position: 1
 ---
 
 # 워커노드 디스크 관리하기

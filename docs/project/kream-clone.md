@@ -1,7 +1,7 @@
 ---
 title: Kream Clone Project
-tags: [BackEnd, Django]
-authors: chihun
+tags: [Django]
+sidebar_position: 2
 ---
 
 # KREAM Clone Project

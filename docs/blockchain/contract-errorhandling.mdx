@@ -2,8 +2,7 @@
 title: Contract Error Handling
 description: error handling for contracts written in solidity.
 keywords: [solidity, ethereum, contract, blockchain, assert, revert ]
-tags: [BlockChain, Solidity]
-authors: chihun
+tags: [ Solidity]
 ---
 
 # Contract Error Handling
@@ -86,8 +85,6 @@ Solidity 공식 문서를 살펴보면, `Panic(uint256)` 오류는 컨트랙트 
 ```
 
 즉, 언더플로 또는 오버플로가 발생했을 때는 `Panic(uint256)` 의 인자값으로 '0x11'이 사용되며 빈 배열에 `.pop()` 을 호출한 경우에는 인자값으로 '0x31'이 사용되는 식이다. 만약 작성자가 직접 `assert` 함수 식을 사용한 경우에는 '0x01'이 인자값으로 사용된다.
-
-<!--truncate-->
 
 ## Assert Handling
 
