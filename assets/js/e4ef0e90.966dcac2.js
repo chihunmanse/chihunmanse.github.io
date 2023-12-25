@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkmy_website=self.webpackChunkmy_website||[]).push([[966],{1590:e=>{e.exports=JSON.parse('{"title":"BlockChain","slug":"/category/blockchain","permalink":"/category/blockchain","navigation":{"previous":{"title":"Home","permalink":"/"},"next":{"title":"Upgradeable Contract","permalink":"/category/upgradeable-contract"}}}')}}]);
