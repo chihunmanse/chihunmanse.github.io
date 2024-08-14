@@ -1,12 +1,18 @@
 ---
 sidebar_position: 1
-slug: '/'
+slug: "/"
 ---
 
 # Home
 
-### [BlockChain](./category/blockchain)
+### [DataStructure & Algorithm](./category/datastructrue-algorithm)
+
 ### [DataBase](./category/database)
+
+### [BlockChain](./category/blockchain)
+
 ### [Docker](./category/docker)
+
 ### [Kubernetes](./category/kubernetes)
+
 ### [Project](./category/project)
