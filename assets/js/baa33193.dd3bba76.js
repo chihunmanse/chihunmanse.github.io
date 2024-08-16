@@ -1,1 +1,0 @@
-"use strict";(self.webpackChunkmy_website=self.webpackChunkmy_website||[]).push([[222],{7244:t=>{t.exports=JSON.parse('{"label":"List","permalink":"/tags/list","allTagsPath":"/tags","count":1,"items":[{"id":"datastructrue-algorithm/list","title":"List","description":"","permalink":"/datastructrue-algorithm/list"}]}')}}]);
