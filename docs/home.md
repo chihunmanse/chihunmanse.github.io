@@ -5,7 +5,7 @@ slug: "/"
 
 # Home
 
-### [DataStructure & Algorithm](./category/datastructrue-algorithm)
+### [DataStructure & Algorithm](./category/datastructure-algorithm)
 
 ### [DataBase](./category/database)
 
