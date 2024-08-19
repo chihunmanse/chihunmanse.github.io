@@ -5,14 +5,12 @@ slug: "/"
 
 # Home
 
-### [DataStructure & Algorithm](./category/datastructure-algorithm)
+### [DataStructure & Algorithm](./datastructure-algorithm)
 
-### [DataBase](./category/database)
+### [BackEnd](./backend)
 
-### [BlockChain](./category/blockchain)
+### [DevOps](./devops)
 
-### [Docker](./category/docker)
+### [BlockChain](./blockchain)
 
-### [Kubernetes](./category/kubernetes)
-
-### [Project](./category/project)
+### [Project](./project)

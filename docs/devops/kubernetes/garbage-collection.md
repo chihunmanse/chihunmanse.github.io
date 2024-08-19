@@ -1,16 +1,16 @@
 ---
-title: 워커노드 디스크 관리하기
-description: 워커노드 디스크 관리하기
+title: 쿠버네티스 워커노드 디스크 관리하기
+description: 쿠버네티스 워커노드 디스크 관리하기
 keywords: [docker, container, kubernetes, garbage-collection]
-tags: [Kubernetes]
+tags: [DevOps, Kubernetes]
 sidebar_position: 1
 ---
 
-# 워커노드 디스크 관리하기
+# 쿠버네티스 워커노드 디스크 관리하기
 
 최근 젠킨스 서버의 디스크 용량이 그동안 쌓인 도커 이미지 및 빌드 캐시 데이터들로 가득 차서 젠킨스에서 빌드가 제대로 되지 않는 문제를 겪었다.
 
-해당 문제를 겪고 나서, 현재 사용 중인 텐센트 클라우드 TKE 클러스터의 워커 노드들의 디스크 용량도 확인해보았다. 
+해당 문제를 겪고 나서, 현재 사용 중인 텐센트 클라우드 TKE 클러스터의 워커 노드들의 디스크 용량도 확인해보았다.
 
 현재 서비스에서는 2개의 워커노드를 사용하고 있는데 그 중 하나의 노드 디스크 용량이 80% 가량 차 있었다. 자세한 사용량을 파악하기 위해 해당 워커노드에 접속하여 `df-h` 명령어를 실행해보았다.
 
@@ -28,7 +28,7 @@ sidebar_position: 1
 ctr cli를 통해 접속 중인 워커노드의 이미지를 조회하려면 k8s.io 네임스페이스의 이미지를 조회하여야 한다.
 
 ```shell
-# ctr namespaces ls 
+# ctr namespaces ls
 NAME   LABELS
 k8s.io
 
@@ -48,18 +48,20 @@ kubelet은 사용되지 않는 이미지에 대해 5분 마다, 사용되지 않
 **이미지 가비지 콜렉션**
 
 쿠버네티스는 [cadvisor](https://github.com/google/cadvisor/)의 도움을 받아 kubelet의 일부인 image manager를 통해 모든 이미지의 라이프 사이클을 관리한다. kubelet은 다음 2가지 디스크 사용량 제한을 고려하여 가비지 수집 결정을 내린다.
+
 - HighThresholdPercent
-    - 디스크 사용량이 HighThresholdPercent 값을 초과하면 가비지 콜렉션이 트리거되어 마지막으로 사용된 시간을 기준으로 가장 오래된 순으로 이미지를 삭제한다.
+  - 디스크 사용량이 HighThresholdPercent 값을 초과하면 가비지 콜렉션이 트리거되어 마지막으로 사용된 시간을 기준으로 가장 오래된 순으로 이미지를 삭제한다.
 - LowThresholdPercent
-    - 위에서 가비지 콜렉션이 트리거되면, 디스크 사용량이 LowThresholdPercent 값에 도달할 때까지 이미지를 삭제한다.
+  - 위에서 가비지 콜렉션이 트리거되면, 디스크 사용량이 LowThresholdPercent 값에 도달할 때까지 이미지를 삭제한다.
 
 kubelet의 이미지 가비지 콜렉션 설정을 수정하기 위해서는 kubelet을 실행할 때 관련 옵션 플래그를 지정해야한다.
 
 https://kubernetes.io/docs/reference/command-line-tools-reference/kubelet/ 문서를 참고하면 설정할 수 있는 옵션들을 찾을 수 있다.
+
 - `--image-gc-high-threshold int32`
-    - 값(비율)은 [0, 100] 범위 내에 있어야 한다. 기본값 : 85
+  - 값(비율)은 [0, 100] 범위 내에 있어야 한다. 기본값 : 85
 - `--image-gc-low-threshold int32`
-    - 값(비율)은 [0, 100] 범위 내에 있어야 한다. 기본값 : 80
+  - 값(비율)은 [0, 100] 범위 내에 있어야 한다. 기본값 : 80
 
 `image-gc-high-threshold` 의 기본값은 85이기 때문에 디스크 사용량이 85%를 초과하면 가비지 콜렉션이 수행되겠지만 더 낮은 임계치를 적용하기 위해 현재 사용 중인 TKE 클러스터의 워커노드에 관련 설정을 적용해보았다.
 
