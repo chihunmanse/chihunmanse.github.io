@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkmy_website=self.webpackChunkmy_website||[]).push([[6941],{6949:e=>{e.exports=JSON.parse('{"title":"Project","slug":"/project","permalink":"/project","navigation":{"previous":{"title":"Contract Error Handling","permalink":"/blockchain/contract-errorhandling"},"next":{"title":"Lush Clone Project","permalink":"/project/lush-clone"}}}')}}]);

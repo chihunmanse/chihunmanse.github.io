@@ -1,1 +1,0 @@
-"use strict";(self.webpackChunkmy_website=self.webpackChunkmy_website||[]).push([[524],{2220:t=>{t.exports=JSON.parse('{"title":"DataStructure-Algorithm","slug":"/category/datastructure-algorithm","permalink":"/category/datastructure-algorithm","navigation":{"previous":{"title":"Home","permalink":"/"},"next":{"title":"List","permalink":"/datastructure-algorithm/list"}}}')}}]);
