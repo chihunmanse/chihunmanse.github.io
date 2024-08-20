@@ -3,7 +3,7 @@ title: 쿠버네티스 워커노드 디스크 관리하기
 description: 쿠버네티스 워커노드 디스크 관리하기
 keywords: [docker, container, kubernetes, garbage-collection]
 tags: [DevOps, Kubernetes]
-sidebar_position: 1
+sidebar_position: 2
 ---
 
 # 쿠버네티스 워커노드 디스크 관리하기
