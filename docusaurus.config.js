@@ -35,10 +35,10 @@ const config = {
           customCss: require.resolve("./src/css/custom.css"),
         },
         docs: {
-          routeBasePath: '/',
+          routeBasePath: "/",
           sidebarPath: require.resolve("./sidebars.js"),
         },
-        blog: false
+        blog: false,
         // blog: {routeBasePath: '/', showReadingTime: true, postsPerPage: 10, blogSidebarTitle: 'All Posts', blogSidebarCount: 'ALL',
         // blogArchiveComponent: require.resolve('./src/theme/BlogArchivePage')
         // },
@@ -50,7 +50,7 @@ const config = {
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
       colorMode: {
-        defaultMode: 'light',
+        defaultMode: "light",
       },
       // Replace with your project's social card
       image: "img/m.png",
@@ -74,7 +74,7 @@ const config = {
           //   position: "left",
           //   label: "BackEnd",
           // },
-          {to: '/tags', label: 'Tags', position: 'right'},
+          { to: "/tags", label: "Tags", position: "right" },
           {
             href: "https://github.com/chihunmanse",
             label: "GitHub",
@@ -133,7 +133,7 @@ const config = {
       prism: {
         theme: lightCodeTheme,
         darkTheme: darkCodeTheme,
-        additionalLanguages: ["solidity", 'docker'],
+        additionalLanguages: ["solidity", "docker", "groovy", "yaml", "python"],
       },
     }),
 };
