@@ -1,0 +1,712 @@
+---
+title: 3. Transaction Isolation Level
+tags: [BackEnd, DataBase, MySQL, TypeORM, ConcurrencyControl, IsolationLevel]
+sidebar_position: 3
+---
+
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# 3. Transaction Isolation Level
+
+데이터베이스는 다수의 트랜잭션이 동시에 실행될 때 데이터의 일관성을 유지하기 위해 다양한 트랜잭션 격리 수준을 사용한다. 이러한 격리 수준은 하나의 트랜잭션이 다른 동시 실행 트랜잭션의 작업으로부터 어느 정도까지 독립되어 있는지를 정의한다. 격리 수준이 높을수록 트랜잭션 간의 간섭이 줄어들지만, 그만큼 성능에 악영향을 미칠 수 있다.
+
+| Isolation Level      | Dirty Read | Non-repeatable Read | Phantom Read |
+| -------------------- | ---------- | ------------------- | ------------ |
+| **Read uncommitted** | O          | O                   | O            |
+| **Read committed**   | X          | O                   | O            |
+| **Repeatable Read**  | X          | X                   | O            |
+| **Serializable**     | X          | X                   | X            |
+
+주요 RDBMS는 SQL 표준에 기반해서 격리 수준을 정의하지만 RDBMS마다 제공하는 격리 수준과 동작 방식에는 차이가 있을 수 있다.
+
+## 부정합 문제
+
+SQL 표준에서 정의하는 3가지 주요 부정합 문제는 아래와 같다.
+
+### Dirty Read
+
+트랜잭션이 아직 커밋되지 않은 다른 트랜잭션의 데이터를 읽을 때 발생한다. 이로 인해 트랜잭션이 롤백되면 잘못된 데이터를 기반으로 작업이 수행될 수 있어 데이터 무결성을 침해할 수 있다.
+
+```
+x = 10, y = 20
+Ti = x에 y를 더한다.
+Tj = y를 70으로 바꾼다.
+
+Ti read(x) => 10
+Tj write(y = 70)
+Ti read(y) => 70
+Ti write(x = 80)
+Ti commit
+Tj abort : rollback(y = 20)
+```
+
+Ti는 커밋되지 않은 y 데이터를 읽었지만 Tj가 롤백됨으로써 데이터 부정합이 발생한다.
+
+```
+x = 50, y = 50
+Ti = x가 y에 40을 이체한다.
+Tj = x와 y를 읽는다.
+
+Ti read(x) => 50
+Ti write(x = 10)
+Tj read(x) => 10
+Tj read(y) => 50
+Tj commit
+Ti read(y) => 50
+Ti write(y = 90)
+Ti commit
+```
+
+롤백이 발생하지 않더라도 Dirty Read가 발생할 수 있다.
+
+### Non-repeatable Read
+
+동일한 트랜잭션 내에서 같은 데이터를 두 번 읽을 때 다른 결과가 나타나는 상황을 의미한다.
+
+```
+x = 10
+Ti = x를 두 번 읽는다.
+Tj = x에 40을 더한다.
+
+Ti read(x) => 10
+Tj read(x) => 10
+Tj write(x = 50)
+Tj commit
+Ti read(x) => 50
+Ti commit
+```
+
+Ti에서 x를 두 번 읽는 사이에 Tj에 의해 x가 업데이트됨으로써 다른 값을 읽게 된다.
+
+### Phantom Read
+
+특정 트랜잭션이 범위 기반의 쿼리를 반복 실행할 때, 쿼리 결과에 새로운 데이터가 추가되거나 기존 데이터가 삭제됨에 따라 결과가 달라지는 현상이다.
+
+```
+t1(..., v = 10)
+Ti = v가 10인 데이터를 두 번 읽는다.
+Tj = v가 10인 데이터 t2를 새롭게 삽입한다.
+
+Ti read(v = 10) => t1
+Tj write(t2.v = 10)
+Tj commit
+Ti read(v = 10) => t1, t2
+Ti commit
+```
+
+Ti가 v=10 조건으로 두 번 조회할 때, 중간에 Tj에 의해 조건에 부합하는 행이 추가되면서 결과가 달라지게 된다.
+
+---
+
+SQL 표준에는 정의되지 않았지만 그 외 여러가지 부정합 문제들이 존재한다.
+
+### Dirty Write
+
+두 개 이상의 트랜잭션이 동시에 같은 데이터를 수정하는 상황에서 발생한다. 아직 커밋되지 않은 데이터가 다른 트랜잭션에 의해 수정되었을 때 발생하며, 트랜잭션 중 하나가 롤백될 경우 데이터의 일관성이 깨질 위험이 있다.
+
+```
+x = 10
+Ti = x를 20으로 바꾼다.
+Tj = x를 100으로 바꾼다.
+
+Ti write(x) => 20
+Tj write(x) => 100
+Ti abort
+```
+
+Ti가 x를 수정하고 아직 커밋되지 않은 상태에서 Tj도 x를 수정한다. 만약 Ti가 롤백된다면, x는 10으로 돌아가야 하지만, Tj에서 x를 100으로 수정하였기 때문에 데이터의 일관성에 문제가 발생할 수 있다. 결국 Ti가 롤백된 이후, x의 값이 무엇이어야 하는지 혼란스러운 상황이 발생한다.
+
+### Lost Update
+
+두 개 이상의 트랜잭션이 동일한 데이터를 수정하는 상황에서 발생한다. 트랜잭션이 서로의 변경 사항을 덮어써서, 나중에 커밋된 트랜잭션의 결과만 반영되고 먼저 커밋된 트랜잭션의 업데이트는 사라지는 상황이다.
+
+```
+x = 100
+Ti = x에 50을 더한다.
+Tj = x에 150을 더한다.
+
+Ti read(x) => 50
+Tj read(x) => 50
+Tj write(x = 200)
+Tj commit
+Ti write(x = 100)
+Ti commit
+```
+
+동시에 x를 수정하려는 상황에서 Ti의 커밋에 의해 Tj의 업데이트 사항은 사라지게 된다.
+
+## Read Uncommitted
+
+가장 낮은 수준의 격리 수준으로, 다른 트랜잭션이 아직 커밋되지 않은 데이터를 읽을 수 있다. 이로 인해 Dirty Read 문제 및 Non-repeatable Read, Phantom Read 문제가 모두 발생할 수 있다.
+
+### Test With TypeORM
+
+#### Dirty Read
+
+```ts
+it("should allow dirty read with READ UNCOMMITTED isolation level", async () => {
+  await couponRepository.save({ code: "COUPON_1" });
+
+  const queryRunner1 = dataSource.createQueryRunner();
+  await queryRunner1.connect();
+  await queryRunner1.startTransaction("READ UNCOMMITTED");
+
+  const queryRunner2 = dataSource.createQueryRunner();
+  await queryRunner2.connect();
+  await queryRunner2.startTransaction("READ UNCOMMITTED");
+
+  try {
+    // 트랜잭션 1이 쿠폰을 조회하고 변경
+    const coupon1 = await queryRunner1.manager.findOne(Coupon, {
+      where: { code: "COUPON_1" },
+    });
+    if (coupon1) {
+      coupon1.isRedeemed = true;
+      await queryRunner1.manager.save(coupon1);
+    }
+
+    // 트랜잭션 2가 트랜잭션 1의 커밋 전에 동일한 쿠폰을 조회
+    const coupon2 = await queryRunner2.manager.findOne(Coupon, {
+      where: { code: "COUPON_1" },
+    });
+
+    // 트랜잭션 1이 롤백됨
+    await queryRunner1.rollbackTransaction();
+
+    // 트랜잭션 1은 롤백되었지만 트랜잭션 2는 트랜잭션 1의 미커밋 상태의 수정된 데이터를 읽음
+    expect(coupon2.isRedeemed).toBe(true);
+
+    await queryRunner2.commitTransaction();
+  } finally {
+    await queryRunner1.release();
+    await queryRunner2.release();
+  }
+});
+```
+
+**실행 쿼리**
+
+```sql
+-- 격리수준이 READ UNCOMMITTED로 설정된 두 개의 트랜잭션 시작
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+START TRANSACTION
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+START TRANSACTION
+
+-- 트랜잭션 1의 쿠폰 조회 (findOne)
+SELECT `Coupon`.`id` AS `Coupon_id`, `Coupon`.`code` AS `Coupon_code`, `Coupon`.`isRedeemed` AS `Coupon_isRedeemed`, `Coupon`.`user_id` AS `Coupon_user_id`, `Coupon`.`version` AS `Coupon_version` FROM `coupon` `Coupon` WHERE ((`Coupon`.`code` = ?)) LIMIT 1 -- PARAMETERS: ["COUPON_1"]
+
+-- 트랜잭션 1의 쿠폰 업데이트 (save)
+SELECT `Coupon`.`id` AS `Coupon_id`, `Coupon`.`code` AS `Coupon_code`, `Coupon`.`isRedeemed` AS `Coupon_isRedeemed`, `Coupon`.`user_id` AS `Coupon_user_id`, `Coupon`.`version` AS `Coupon_version` FROM `coupon` `Coupon` WHERE `Coupon`.`id` IN (?) -- PARAMETERS: [403]
+UPDATE `coupon` SET `isRedeemed` = ?, `version` = `version` + 1 WHERE `id` IN (?) -- PARAMETERS: [1,403]
+SELECT `Coupon`.`id` AS `Coupon_id`, `Coupon`.`version` AS `Coupon_version` FROM `coupon` `Coupon` WHERE `Coupon`.`id` = ? -- PARAMETERS: [403]
+
+-- 트랜잭션 1이 커밋되지 않은 상태에서 트랜잭션 2가 쿠폰 조회
+SELECT `Coupon`.`id` AS `Coupon_id`, `Coupon`.`code` AS `Coupon_code`, `Coupon`.`isRedeemed` AS `Coupon_isRedeemed`, `Coupon`.`user_id` AS `Coupon_user_id`, `Coupon`.`version` AS `Coupon_version` FROM `coupon` `Coupon` WHERE ((`Coupon`.`code` = ?)) LIMIT 1 -- PARAMETERS: ["COUPON_1"]
+
+-- 트랜잭션 1 롤백
+ROLLBACK
+
+-- 트랜잭션 2 커밋
+COMMIT
+```
+
+## Read Committed
+
+이 격리 수준에서는 트랜잭션이 커밋된 데이터만 읽을 수 있다. 즉, 다른 트랜잭션이 아직 커밋되지 않은 데이터를 읽는 것을 방지한다. 때문에 Dirty Read 문제는 방지되지만 Non-repeatable Read 문제와 Phantom Read 문제는 발생할 수 있다.
+
+### Test With TypeORM
+
+#### Non-repeatable Read
+
+```ts
+it("should allow non repeatable read with READ COMMITTED isolation level", async () => {
+  await couponRepository.save({
+    code: "COUPON_1",
+  });
+
+  const queryRunner1 = dataSource.createQueryRunner();
+  await queryRunner1.connect();
+  await queryRunner1.startTransaction("READ COMMITTED");
+
+  const queryRunner2 = dataSource.createQueryRunner();
+  await queryRunner2.connect();
+  await queryRunner2.startTransaction("READ COMMITTED");
+
+  try {
+    // 트랜잭션 1이 쿠폰을 조회
+    const coupon1Before = await queryRunner1.manager.findOne(Coupon, {
+      where: { code: "COUPON_1" },
+    });
+
+    // 트랜잭션 2가 동일한 쿠폰을 조회하고 수정
+    const coupon2 = await queryRunner2.manager.findOne(Coupon, {
+      where: { code: "COUPON_1" },
+    });
+
+    if (coupon2) {
+      coupon2.isRedeemed = true;
+      await queryRunner2.manager.save(coupon2);
+    }
+
+    // 트랜잭션 2가 커밋됨
+    await queryRunner2.commitTransaction();
+
+    // 트랜잭션 1이 다시 쿠폰을 조회 (non-repeatable read 발생)
+    const coupon1After = await queryRunner1.manager.findOne(Coupon, {
+      where: { code: "COUPON_1" },
+    });
+
+    expect(coupon1Before.isRedeemed).toBe(false); // 첫 번째 읽기 결과는 수정 전 상태
+    expect(coupon1After.isRedeemed).toBe(true); // 두 번째 읽기 결과는 수정 후 상태
+
+    await queryRunner1.commitTransaction();
+  } finally {
+    await queryRunner1.release();
+    await queryRunner2.release();
+  }
+});
+```
+
+**실행 쿼리**
+
+```sql
+-- 격리수준이 READ COMMITTED로 설정된 두 개의 트랜잭션 시작
+SET TRANSACTION ISOLATION LEVEL READ COMMITTED
+START TRANSACTION
+SET TRANSACTION ISOLATION LEVEL READ COMMITTED
+START TRANSACTION
+
+-- 트랜잭션 1의 쿠폰 조회 (findOne)
+SELECT `Coupon`.`id` AS `Coupon_id`, `Coupon`.`code` AS `Coupon_code`, `Coupon`.`isRedeemed` AS `Coupon_isRedeemed`, `Coupon`.`user_id` AS `Coupon_user_id`, `Coupon`.`version` AS `Coupon_version` FROM `coupon` `Coupon` WHERE ((`Coupon`.`code` = ?)) LIMIT 1 -- PARAMETERS: ["COUPON_1"]
+
+-- 트랜잭션 2의 쿠폰 조회 (findOne)
+SELECT `Coupon`.`id` AS `Coupon_id`, `Coupon`.`code` AS `Coupon_code`, `Coupon`.`isRedeemed` AS `Coupon_isRedeemed`, `Coupon`.`user_id` AS `Coupon_user_id`, `Coupon`.`version` AS `Coupon_version` FROM `coupon` `Coupon` WHERE ((`Coupon`.`code` = ?)) LIMIT 1 -- PARAMETERS: ["COUPON_1"]
+
+-- 트랜잭션 2의 쿠폰 업데이트 (save)
+SELECT `Coupon`.`id` AS `Coupon_id`, `Coupon`.`code` AS `Coupon_code`, `Coupon`.`isRedeemed` AS `Coupon_isRedeemed`, `Coupon`.`user_id` AS `Coupon_user_id`, `Coupon`.`version` AS `Coupon_version` FROM `coupon` `Coupon` WHERE `Coupon`.`id` IN (?) -- PARAMETERS: [407]
+UPDATE `coupon` SET `isRedeemed` = ?, `version` = `version` + 1 WHERE `id` IN (?) -- PARAMETERS: [1,407]
+SELECT `Coupon`.`id` AS `Coupon_id`, `Coupon`.`version` AS `Coupon_version` FROM `coupon` `Coupon` WHERE `Coupon`.`id` = ? -- PARAMETERS: [407]
+
+-- 트랜잭션 2 커밋
+COMMIT
+
+-- 트랜잭션 1이 쿠폰을 다시 조회 (findOne)
+SELECT `Coupon`.`id` AS `Coupon_id`, `Coupon`.`code` AS `Coupon_code`, `Coupon`.`isRedeemed` AS `Coupon_isRedeemed`, `Coupon`.`user_id` AS `Coupon_user_id`, `Coupon`.`version` AS `Coupon_version` FROM `coupon` `Coupon` WHERE ((`Coupon`.`code` = ?)) LIMIT 1 -- PARAMETERS: ["COUPON_1"]
+
+-- 트랜잭션 1 커밋
+COMMIT
+```
+
+#### Phantom Read
+
+```ts
+it("should allow phantom read with READ COMMITTED isolation level", async () => {
+  await couponRepository.save({ code: "COUPON_1" });
+
+  const queryRunner1 = dataSource.createQueryRunner();
+  await queryRunner1.connect();
+  await queryRunner1.startTransaction("READ COMMITTED");
+
+  const queryRunner2 = dataSource.createQueryRunner();
+  await queryRunner2.connect();
+  await queryRunner2.startTransaction("READ COMMITTED");
+
+  try {
+    // 트랜잭션 1이 isRedeemd가 false인 쿠폰을 조회
+    const couponsBefore = await queryRunner1.manager.find(Coupon, {
+      where: { isRedeemed: false },
+    });
+
+    // 트랜잭션 2가 새로운 쿠폰을 추가
+    await queryRunner2.manager.insert(Coupon, {
+      code: "COUPON_2",
+    });
+    await queryRunner2.commitTransaction();
+
+    // 트랜잭션 1이 다시 isRedeemd가 false인 쿠폰을 조회 (phantom read 발생)
+    const couponsAfter = await queryRunner1.manager.find(Coupon, {
+      where: { isRedeemed: false },
+    });
+
+    expect(couponsBefore.length).toBe(1);
+    expect(couponsAfter.length).toBe(2);
+
+    await queryRunner1.commitTransaction();
+  } finally {
+    await queryRunner2.release();
+    await queryRunner1.release();
+  }
+});
+```
+
+**실행 쿼리**
+
+```sql
+-- 격리수준이 READ COMMITTED로 설정된 두 개의 트랜잭션 시작
+SET TRANSACTION ISOLATION LEVEL READ COMMITTED
+START TRANSACTION
+SET TRANSACTION ISOLATION LEVEL READ COMMITTED
+START TRANSACTION
+
+-- 트랜잭션 1이 isRedeemd가 false인 쿠폰을 조회 (find)
+SELECT `Coupon`.`id` AS `Coupon_id`, `Coupon`.`code` AS `Coupon_code`, `Coupon`.`isRedeemed` AS `Coupon_isRedeemed`, `Coupon`.`user_id` AS `Coupon_user_id`, `Coupon`.`version` AS `Coupon_version` FROM `coupon` `Coupon` WHERE ((`Coupon`.`isRedeemed` = ?)) -- PARAMETERS: [false]
+
+-- 트랜잭션 2가 새로운 쿠폰을 추가 (insert)
+INSERT INTO `coupon`(`id`, `code`, `isRedeemed`, `user_id`, `version`) VALUES (DEFAULT, ?, DEFAULT, DEFAULT, 1) -- PARAMETERS: ["COUPON_2"]
+SELECT `Coupon`.`id` AS `Coupon_id`, `Coupon`.`isRedeemed` AS `Coupon_isRedeemed`, `Coupon`.`version` AS `Coupon_version` FROM `coupon` `Coupon` WHERE `Coupon`.`id` = ? -- PARAMETERS: [409]
+
+-- 트랜잭션 2 커밋
+COMMIT
+
+-- 트랜잭션 1이 다시 isRedeemd가 false인 쿠폰을 조회 (find)
+SELECT `Coupon`.`id` AS `Coupon_id`, `Coupon`.`code` AS `Coupon_code`, `Coupon`.`isRedeemed` AS `Coupon_isRedeemed`, `Coupon`.`user_id` AS `Coupon_user_id`, `Coupon`.`version` AS `Coupon_version` FROM `coupon` `Coupon` WHERE ((`Coupon`.`isRedeemed` = ?)) -- PARAMETERS: [false]
+
+-- 트랜잭션 2 커밋
+COMMIT
+```
+
+#### Dirty Read 방지
+
+```ts
+it("should prevent dirty read with READ COMMITTED isolation level", async () => {
+  await couponRepository.save({ code: "COUPON_1" });
+
+  const queryRunner1 = dataSource.createQueryRunner();
+  await queryRunner1.connect();
+  await queryRunner1.startTransaction("READ COMMITTED");
+
+  const queryRunner2 = dataSource.createQueryRunner();
+  await queryRunner2.connect();
+  await queryRunner2.startTransaction("READ COMMITTED");
+
+  try {
+    // 트랜잭션 1이 쿠폰을 조회하고 변경하지만 아직 커밋하지 않음
+    const coupon1 = await queryRunner1.manager.findOne(Coupon, {
+      where: { code: "COUPON_1" },
+    });
+
+    if (coupon1) {
+      coupon1.isRedeemed = true;
+      await queryRunner1.manager.save(coupon1);
+    }
+
+    // 트랜잭션 2가 동일한 쿠폰을 조회, 트랜잭션 1의 변경사항이 보이지 않음 (Dirty Read가 발생하지 않음)
+    const coupon2 = await queryRunner2.manager.findOne(Coupon, {
+      where: { code: "COUPON_1" },
+    });
+    expect(coupon2.isRedeemed).toBe(false); // 쿠폰이 변경되지 않은 상태여야 함
+
+    await queryRunner1.rollbackTransaction();
+    await queryRunner2.commitTransaction();
+  } finally {
+    await queryRunner1.release();
+    await queryRunner2.release();
+  }
+});
+```
+
+## Repeatable Read
+
+이 격리 수준에서는 트랜잭션이 시작된 시점의 데이터 상태를 기준으로 동일한 쿼리를 여러 번 실행해도 같은 결과를 반환한다. SQL 표준에서 Repeatable Read는 개별 행의 일관성만을 보장하고 트랜잭션 간의 데이터 삽입 및 삭제에 의해 데이터 범위가 영향을 받을 수 있는 상황을 고려하지 않는다. 따라서 Phantom Read 문제가 발생할 수 있다.
+
+### MySQL (InnoDB)의 Repeatable Read
+
+MySQL의 InnoDB 스토리지 엔진의 Repeatable Read 격리 수준에서는 SQL 표준과 다르게 일반적으로 Phantom Read가 발생하지 않는다.
+
+> 동일한 트랜잭션 내에서의 consistent read는 첫 번째 읽기 작업에서 설정된 스냅샷을 읽습니다. 즉, 동일한 트랜잭션 내에서 여러 번의 일반적인 (잠금을 걸지 않는) **SELECT** 문을 실행하더라도, 이 **SELECT** 문들은 서로 일관된 결과를 반환합니다. 자세한 내용은 **Section 17.7.2.3, "Consistent Nonlocking Reads"**를 참조하세요.
+>
+> **FOR UPDATE** 또는 **FOR SHARE**와 함께 사용하는 SELECT 문, **UPDATE**, **DELETE** 문과 같은 잠금을 거는 읽기 작업의 경우, InnoDB가 잠금을 거는 방식은 해당 문이 고유 인덱스와 고유한 검색 조건을 사용하는지, 아니면 범위 타입 검색 조건을 사용하는지에 따라 다릅니다.
+>
+> 고유 인덱스와 고유한 검색 조건을 사용하는 경우, InnoDB는 발견된 인덱스 레코드만 잠그며, 그 앞의 간격(gap)은 잠그지 않습니다.
+>
+> 다른 검색 조건을 사용하는 경우, InnoDB는 인덱스 범위를 스캔하며 그 범위 내의 간격(gap)으로 다른 세션들이 삽입을 할 수 없도록 하기 위해 gap lock 또는 next-key lock을 사용하여 인덱스 범위를 잠급니다.
+>
+> https://dev.mysql.com/doc/refman/8.4/en/innodb-transaction-isolation-levels.html
+
+#### Consistent Read
+
+> 다른 트랜잭션이 동시에 실행되는 동안 수행된 변경 사항과 관계없이 특정 시점의 데이터를 기준으로 쿼리 결과를 제공하기 위해 스냅샷 정보를 사용하는 읽기 작업입니다. 만약 쿼리된 데이터가 다른 트랜잭션에 의해 변경된 경우, 원래 데이터는 undo log의 내용을 기반으로 복원됩니다. 이 기술은 다른 트랜잭션이 종료될 때까지 대기하도록 하는 잠금 이슈를 피하면서 동시성을 높이는 데 기여합니다.
+>
+> **REPEATABLE READ** 격리 수준에서는 스냅샷이 첫 번째 읽기 작업이 수행된 시점을 기준으로 설정됩니다. **READ COMMITTED** 격리 수준에서는 각 consistent read 작업 시점에 스냅샷이 리셋됩니다.
+>
+> Consistent read는 InnoDB가 **READ COMMITTED**와 **REPEATABLE READ** 격리 수준에서 **SELECT** 문을 처리하는 기본 모드입니다. Consistent read는 액세스하는 테이블에 대해 어떠한 잠금도 설정하지 않으므로, 다른 세션들이 이 테이블을 자유롭게 수정할 수 있습니다.
+>
+> https://dev.mysql.com/doc/refman/8.4/en/glossary.html#glos_consistent_read
+
+Read Committed 격리 수준에서는 각 consistent read 시점에 스냅샷을 계속 만드는 방식으로 진행되기 때문에 Non-Repeatable Read 문제가 발생하지만 Repeatable Read 수준에서는 첫 번째 읽기 작업이 수행된 시점으로 스냅샷이 설정되기 때문에 다른 트랜잭션이 커밋하더라도 스냅샷이 변경되지 않는다. 따라서 Non-Repeatable Read 문제가 발생하지 않는다.
+
+#### Record Lock
+
+> 인덱스 레코드에 대한 잠금을 의미합니다. 예를 들어, `SELECT c1 FROM t WHERE c1 = 10 FOR UPDATE;`는 다른 트랜잭션이 `t.c1`의 값이 10인 행을 삽입, 업데이트, 또는 삭제하지 못하게 합니다.
+>
+> https://dev.mysql.com/doc/refman/8.4/en/glossary.html#glos_record_lock
+
+#### Gab Lock
+
+> 인덱스 레코드 사이의 간격(gap)이나 첫 번째 인덱스 레코드 이전 또는 마지막 인덱스 레코드 이후의 간격에 걸리는 잠금을 말합니다. 예를 들어, `SELECT c1 FROM t WHERE c1 BETWEEN 10 and 20 FOR UPDATE;`는 다른 트랜잭션이 `t.c1` 컬럼에 15라는 값을 삽입하는 것을 방지합니다. 이는 해당 컬럼에 이미 15라는 값이 존재하든 존재하지 않든 관계없이, 범위 내의 모든 기존 값들 사이의 간격이 잠겨 있기 때문입니다.
+>
+> Gap lock은 성능과 동시성(concurrency) 사이의 균형을 맞추기 위한 일부로, 일부 트랜잭션 격리 수준에서 사용되며, 다른 격리 수준에서는 사용되지 않습니다.
+>
+> https://dev.mysql.com/doc/refman/8.4/en/glossary.html#glos_gap_lock
+
+#### Next Key Lock
+
+> 인덱스 레코드에 대한 **record lock**과 그 인덱스 레코드 앞의 간격에 대한 **gap lock**을 결합한 것입니다.
+>
+> https://dev.mysql.com/doc/refman/8.4/en/glossary.html#glos_next_key_lock
+
+Repeatable Read 격리 수준에서 범위 타입 검색 조건을 사용하는 경우, 해당 범위 내에 다른 세션들이 삽입을 할 수 없도록 Gab Lock 또는 Next Key Lock을 사용하기 때문에, Repeatable Read 격리 수준에서도 Phantom Read가 방지되는 것이다.
+
+### Test With TypeORM
+
+#### Non-repeatable Read 방지
+
+```ts
+it("should prevent non-repeatable read with REPEATABLE READ isolation level", async () => {
+  await couponRepository.save({ code: "COUPON_1" });
+
+  const queryRunner1 = dataSource.createQueryRunner();
+  await queryRunner1.connect();
+  await queryRunner1.startTransaction("REPEATABLE READ");
+
+  const queryRunner2 = dataSource.createQueryRunner();
+  await queryRunner2.connect();
+  await queryRunner2.startTransaction("REPEATABLE READ");
+
+  try {
+    // 트랜잭션 1이 쿠폰을 조회
+    const coupon1Before = await queryRunner1.manager.findOne(Coupon, {
+      where: { code: "COUPON_1" },
+    });
+
+    // 트랜잭션 2가 동일한 쿠폰을 조회하고 수정
+    const coupon2 = await queryRunner2.manager.findOne(Coupon, {
+      where: { code: "COUPON_1" },
+    });
+
+    if (coupon2) {
+      coupon2.isRedeemed = true;
+      await queryRunner2.manager.save(coupon2);
+    }
+
+    // 트랜잭션 2가 커밋됨
+    await queryRunner2.commitTransaction();
+
+    // 트랜잭션 1이 다시 쿠폰을 조회 (Non-repeatable Read 발생하지 않음)
+    const coupon1After = await queryRunner1.manager.findOne(Coupon, {
+      where: { code: "COUPON_1" },
+    });
+
+    // 처음 조회한 상태와 동일해야 함
+    expect(coupon1Before.isRedeemed).toBe(coupon1After.isRedeemed);
+
+    await queryRunner1.commitTransaction();
+  } finally {
+    await queryRunner2.release();
+    await queryRunner1.release();
+  }
+});
+```
+
+#### Phantom Read 방지
+
+```ts
+it("should prevent phantom read with REPEATABLE READ isolation level", async () => {
+  await couponRepository.save({ code: "COUPON_1" });
+
+  const queryRunner1 = dataSource.createQueryRunner();
+  await queryRunner1.connect();
+  await queryRunner1.startTransaction("REPEATABLE READ");
+
+  const queryRunner2 = dataSource.createQueryRunner();
+  await queryRunner2.connect();
+  await queryRunner2.startTransaction("REPEATABLE READ");
+
+  try {
+    // 트랜잭션 1이 isRedeemd가 false인 쿠폰을 조회
+    const couponsBefore = await queryRunner1.manager.find(Coupon, {
+      where: { isRedeemed: false },
+    });
+
+    // 트랜잭션 2가 새로운 쿠폰을 추가
+    await queryRunner2.manager.insert(Coupon, {
+      code: "COUPON_2",
+    });
+    await queryRunner2.commitTransaction();
+
+    // 트랜잭션 1이 다시 isRedeemd가 false인 쿠폰을 조회 (phantom read 발생하지 않음)
+    const couponsAfter = await queryRunner1.manager.find(Coupon, {
+      where: { isRedeemed: false },
+    });
+
+    expect(couponsBefore.length).toBe(couponsAfter.length);
+
+    await queryRunner1.commitTransaction();
+  } finally {
+    await queryRunner2.release();
+    await queryRunner1.release();
+  }
+});
+```
+
+## Serializable
+
+가장 높은 격리 수준으로, 트랜잭션이 서로 완전히 독립적으로 실행되며 트랜잭션이 실행되는 동안 다른 트랜잭션의 결과가 영향을 미치지 않도록 보장한다.
+
+### MySQL (InnoDB)의 Serializable
+
+> 이 수준은 **REPEATABLE READ**와 유사하지만, **autocommit**이 비활성화된 경우 InnoDB는 모든 일반 **SELECT** 문을 **SELECT ... FOR SHARE**로 암시적으로 변환합니다. **autocommit**이 활성화된 경우, **SELECT**는 자체 트랜잭션이므로 읽기 전용으로 간주되며, 일관된(nonlocking) 읽기로 수행될 때 직렬화될 수 있으며 다른 트랜잭션에 대해 차단될 필요가 없습니다. (다른 트랜잭션이 선택된 행을 수정한 경우에도 **SELECT**가 차단되도록 하려면, **autocommit**을 비활성화해야 합니다.)
+>
+> https://dev.mysql.com/doc/refman/8.4/en/innodb-transaction-isolation-levels.html
+
+Serializable 격리 수준에서는 모든 일반 SELECT 문에 공유 락을 거는 방식으로 Isolation을 보장한다.
+
+### Test With TypeORM
+
+```mdx-code-block
+<Tabs>
+<TabItem value="coupon.service.ts">
+```
+
+```ts
+async assignCouponWithSerializableIsolation(userId: number): Promise<{
+  readCoupon?: Coupon;
+  saveCoupon?: Coupon;
+  error?: string;
+}> {
+  const queryRunner = this.dataSource.createQueryRunner();
+  await queryRunner.startTransaction('SERIALIZABLE');
+
+  let coupon;
+  let saveCoupon;
+  let error;
+
+  try {
+    coupon = await queryRunner.manager
+      .createQueryBuilder(Coupon, 'coupon')
+      .where('coupon.isRedeemed = :isRedeemed', { isRedeemed: false })
+      .orderBy('coupon.id', 'ASC')
+      .getOne();
+
+    if (!coupon) {
+      throw new Error('No available coupons');
+    }
+
+    coupon.isRedeemed = true;
+    coupon.userId = userId;
+
+    saveCoupon = await queryRunner.manager.save(coupon);
+
+    await queryRunner.commitTransaction();
+  } catch (e) {
+    await queryRunner.rollbackTransaction();
+    error = e.message;
+  } finally {
+    await queryRunner.release();
+
+    return {
+      readCoupon: coupon,
+      saveCoupon,
+      error,
+    };
+  }
+}
+```
+
+```mdx-code-block
+</TabItem>
+<TabItem value="coupon.isolation.spec.ts">
+```
+
+```ts
+it("should handle concurrent requests with SERIALIZABLE isolation level", async () => {
+  const user1 = await userRepository.save({ name: "user1" });
+  const user2 = await userRepository.save({ name: "user2" });
+  await couponRepository.save({ code: "COUPON_1" });
+
+  const result1Promise = couponService.assignCouponWithSerializableIsolation(
+    user1.id
+  );
+  const result2Promise = couponService.assignCouponWithSerializableIsolation(
+    user2.id
+  );
+
+  const [result1, result2] = await Promise.all([
+    result1Promise,
+    result2Promise,
+  ]);
+
+  // SELECT에 공유락이 걸리기 때문에 쿠폰 읽기는 가능
+  expect(result1.readCoupon.code).toBe("COUPON_1");
+  expect(result2.readCoupon.code).toBe("COUPON_1");
+  if (result1.saveCoupon) {
+    expect(result1.saveCoupon.code).toBe("COUPON_1");
+    expect(result1.saveCoupon.userId).toBe(user1.id);
+    expect(result2.saveCoupon).toBeUndefined();
+    expect(result2.error).toBe(
+      "Deadlock found when trying to get lock; try restarting transaction"
+    );
+  } else {
+    expect(result2.saveCoupon.code).toBe("COUPON_1");
+    expect(result2.saveCoupon.userId).toBe(user2.id);
+    expect(result1.saveCoupon).toBeUndefined();
+    expect(result1.error).toBe(
+      "Deadlock found when trying to get lock; try restarting transaction"
+    );
+  }
+});
+```
+
+```mdx-code-block
+</TabItem>
+</Tabs>
+```
+
+**실행 쿼리**
+
+```sql
+-- 격리 수준이 SERIALIZABLE로 설정된 두 개의 트랜잭션 시작
+SET TRANSACTION ISOLATION LEVEL SERIALIZABLE
+SET TRANSACTION ISOLATION LEVEL SERIALIZABLE
+START TRANSACTION
+START TRANSACTION
+
+-- 첫 번째 트랜잭션에서 쿠폰 조회 (getOne, SERIALIZABLE 수준이므로 공유 락이 걸림)
+SELECT `coupon`.`id` AS `coupon_id`, `coupon`.`code` AS `coupon_code`, `coupon`.`isRedeemed` AS `coupon_isRedeemed`, `coupon`.`user_id` AS `coupon_user_id`, `coupon`.`version` AS `coupon_version` FROM `coupon` `coupon` WHERE `coupon`.`isRedeemed` = ? ORDER BY `coupon`.`id` ASC -- PARAMETERS: [false]
+
+-- 두 번째 트랜잭션에서도 쿠폰 조회 (getOne, SERIALIZABLE 수준이므로 공유 락이 걸림)
+SELECT `coupon`.`id` AS `coupon_id`, `coupon`.`code` AS `coupon_code`, `coupon`.`isRedeemed` AS `coupon_isRedeemed`, `coupon`.`user_id` AS `coupon_user_id`, `coupon`.`version` AS `coupon_version` FROM `coupon` `coupon` WHERE `coupon`.`isRedeemed` = ? ORDER BY `coupon`.`id` ASC -- PARAMETERS: [false]
+
+-- 요청 1,2의 조회 쿼리 (save)
+SELECT `Coupon`.`id` AS `Coupon_id`, `Coupon`.`code` AS `Coupon_code`, `Coupon`.`isRedeemed` AS `Coupon_isRedeemed`, `Coupon`.`user_id` AS `Coupon_user_id`, `Coupon`.`version` AS `Coupon_version` FROM `coupon` `Coupon` WHERE `Coupon`.`id` IN (?) -- PARAMETERS: [521]
+SELECT `Coupon`.`id` AS `Coupon_id`, `Coupon`.`code` AS `Coupon_code`, `Coupon`.`isRedeemed` AS `Coupon_isRedeemed`, `Coupon`.`user_id` AS `Coupon_user_id`, `Coupon`.`version` AS `Coupon_version` FROM `coupon` `Coupon` WHERE `Coupon`.`id` IN (?) -- PARAMETERS: [521]
+
+-- 첫 번째 트랜잭션에서 쿠폰 업데이트 (save), 업데이트를 위해서는 배타 락을 획득해야하지만 두 번째 트랜잭션에서도 공유 락이 걸려있기 때문에 획득 불가
+UPDATE `coupon` SET `isRedeemed` = ?, `user_id` = ?, `version` = `version` + 1 WHERE `id` IN (?) -- PARAMETERS: [1,237,521]
+
+-- 두 번째 트랜잭션에서 쿠폰 업데이트 (save), 업데이트를 위해서는 배타 락을 획득해야하지만 첫 번째 트랜잭션에서 공유 락이 걸려있기 때문에 획득 불가
+UPDATE `coupon` SET `isRedeemed` = ?, `user_id` = ?, `version` = `version` + 1 WHERE `id` IN (?) -- PARAMETERS: [1,238,521]
+
+-- 두 트랜잭션에서 서로 배타 락을 획득하기 위해 무한대기하게 되므로 데드락 발생 후 하나의 트랜잭션 롤백 처리
+ROLLBACK
+
+-- 데드락 해소 후 남은 트랜잭션 조회 쿼리 (save)
+SELECT `Coupon`.`id` AS `Coupon_id`, `Coupon`.`version` AS `Coupon_version` FROM `coupon` `Coupon` WHERE `Coupon`.`id` = ? -- PARAMETERS: [521]
+
+-- 데드락 해소 후 남은 트랜잭션 커밋
+COMMIT
+```
+
+---
+
+테스트 환경의 DB는 MySQL8.0을 사용하였다. 해당 글에서 사용되는 예시코드는 [GitHub](https://github.com/chihunmanse/concurrency-test) 에서도 확인할 수 있다.
+
+**참조**
+
+https://www.youtube.com/watch?v=bLLarZTrebU&list=PLcXyemr8ZeoREWGhhZi5FZs6cvymjIBVe&index=17
+
+https://brunch.co.kr/@jinyoungchoi95/5
+
+https://dev.mysql.com/doc/refman/8.4/en/innodb-transaction-isolation-levels.html
