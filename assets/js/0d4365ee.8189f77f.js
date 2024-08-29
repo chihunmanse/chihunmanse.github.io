@@ -1,1 +1,0 @@
-"use strict";(self.webpackChunkmy_website=self.webpackChunkmy_website||[]).push([[1983],{2464:e=>{e.exports=JSON.parse('{"title":"BackEnd","slug":"/backend","permalink":"/backend","navigation":{"previous":{"title":"HashTable","permalink":"/datastructure-algorithm/hashtable"},"next":{"title":"Database","permalink":"/category/database"}}}')}}]);
