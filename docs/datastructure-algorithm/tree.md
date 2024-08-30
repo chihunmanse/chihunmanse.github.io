@@ -80,7 +80,7 @@ class Node:
         self.right = None
 
 def level_order_traversal(root):
-    visted = []
+    visited = []
 
     if root is None:
         return
@@ -88,13 +88,13 @@ def level_order_traversal(root):
     queue = deque([root])
     while queue:
         node = queue.popleft()  # 큐에서 노드 꺼내기
-        visted.append(node.value) # 노드 방문
+        visited.append(node.value) # 노드 방문
         if node.left:
             queue.append(node.left)  # 왼쪽 자식 추가
         if node.right:
             queue.append(node.right)  # 오른쪽 자식 추가
 
-    return visted
+    return visited
 
 # 트리 생성 및 레벨순회 실행 예시
 root = Node('A')
@@ -130,17 +130,17 @@ class Node:
         self.left = None
         self.right = None
 
-visted = []
+visited = []
 
 def preorder_traversal(node):
     if node is None:
         return
 
-    visted.append(node.value)  # 루트 노드 방문
+    visited.append(node.value)  # 루트 노드 방문
     preorder_traversal(node.left)  # 왼쪽 자식 방문
     preorder_traversal(node.right)  # 오른쪽 자식 방문
 
-    return visted
+    return visited
 
 # 트리 생성 및 전위순회 실행 예시
 root = Node('A')
@@ -176,17 +176,17 @@ class Node:
         self.left = None
         self.right = None
 
-visted = []
+visited = []
 
 def inorder_traversal(node):
     if node is None:
         return
 
     inorder_traversal(node.left)  # 왼쪽 자식 방문
-    visted.append(node.value)  # 루트 노드 방문
+    visited.append(node.value)  # 루트 노드 방문
     inorder_traversal(node.right)  # 오른쪽 자식 방문
 
-    return visted
+    return visited
 
 # 트리 생성 및 중위순회 실행 예시
 root = Node('A')
@@ -222,7 +222,7 @@ class Node:
         self.left = None
         self.right = None
 
-visted = []
+visited = []
 
 def postorder_traversal(node):
     if node is None:
@@ -230,9 +230,9 @@ def postorder_traversal(node):
 
     postorder_traversal(node.left)  # 왼쪽 자식 방문
     postorder_traversal(node.right)  # 오른쪽 자식 방문
-    visted.append(node.value)  # 루트 노드 방문
+    visited.append(node.value)  # 루트 노드 방문
 
-    return visted
+    return visited
 
 # 트리 생성 및 후위순회 실행 예시
 root = Node('A')
