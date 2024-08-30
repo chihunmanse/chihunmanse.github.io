@@ -1,6 +1,6 @@
 ---
 title: Tree
-tags: [DataStructure, Tree, BFS, DFS]
+tags: [DataStructure, Algorithm, Tree, BFS, DFS]
 sidebar_position: 4
 ---
 
