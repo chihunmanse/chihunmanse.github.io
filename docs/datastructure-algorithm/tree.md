@@ -73,17 +73,28 @@ sidebar_position: 4
 ```python
 from collections import deque
 
+class Node:
+    def __init__(self, value):
+        self.value = value
+        self.left = None
+        self.right = None
+
 def level_order_traversal(root):
+    visted = []
+
     if root is None:
         return
+
     queue = deque([root])
     while queue:
         node = queue.popleft()  # 큐에서 노드 꺼내기
-        print(node.value, end=' ')
+        visted.append(node.value) # 노드 방문
         if node.left:
             queue.append(node.left)  # 왼쪽 자식 추가
         if node.right:
             queue.append(node.right)  # 오른쪽 자식 추가
+
+    return visted
 
 # 트리 생성 및 레벨순회 실행 예시
 root = Node('A')
@@ -92,7 +103,8 @@ root.right = Node('C')
 root.left.left = Node('D')
 root.left.right = Node('E')
 root.right.right = Node('F')
-level_order_traversal(root)  # 출력: A B C D E F
+
+print(level_order_traversal(root)) # ['A', 'B', 'C', 'D', 'E', 'F']
 ```
 
 ### 전위순회 (Preorder Traversal)
@@ -112,12 +124,23 @@ level_order_traversal(root)  # 출력: A B C D E F
 #### 구현
 
 ```python
+class Node:
+    def __init__(self, value):
+        self.value = value
+        self.left = None
+        self.right = None
+
+visted = []
+
 def preorder_traversal(node):
     if node is None:
         return
-    print(node.value, end=' ')  # 루트 노드 방문
+
+    visted.append(node.value)  # 루트 노드 방문
     preorder_traversal(node.left)  # 왼쪽 자식 방문
     preorder_traversal(node.right)  # 오른쪽 자식 방문
+
+    return visted
 
 # 트리 생성 및 전위순회 실행 예시
 root = Node('A')
@@ -127,7 +150,7 @@ root.left.left = Node('D')
 root.left.right = Node('E')
 root.right.right = Node('F')
 
-preorder_traversal(root)  # 출력: A B D E C F
+print(preorder_traversal(root))  # ['A', 'B', 'D', 'E', 'C', 'F']
 ```
 
 ### 중위순회 (Inorder Traversal)
@@ -147,12 +170,23 @@ preorder_traversal(root)  # 출력: A B D E C F
 #### 구현
 
 ```python
+class Node:
+    def __init__(self, value):
+        self.value = value
+        self.left = None
+        self.right = None
+
+visted = []
+
 def inorder_traversal(node):
     if node is None:
         return
+
     inorder_traversal(node.left)  # 왼쪽 자식 방문
-    print(node.value, end=' ')  # 루트 노드 방문
+    visted.append(node.value)  # 루트 노드 방문
     inorder_traversal(node.right)  # 오른쪽 자식 방문
+
+    return visted
 
 # 트리 생성 및 중위순회 실행 예시
 root = Node('A')
@@ -162,7 +196,7 @@ root.left.left = Node('D')
 root.left.right = Node('E')
 root.right.right = Node('F')
 
-inorder_traversal(root)  # 출력: D B E A C F
+print(inorder_traversal(root))  # ['D', 'B', 'E', 'A', 'C', 'F']
 ```
 
 ### 후위순회 (Postorder Traversal)
@@ -182,12 +216,23 @@ inorder_traversal(root)  # 출력: D B E A C F
 #### 구현
 
 ```python
+class Node:
+    def __init__(self, value):
+        self.value = value
+        self.left = None
+        self.right = None
+
+visted = []
+
 def postorder_traversal(node):
     if node is None:
         return
+
     postorder_traversal(node.left)  # 왼쪽 자식 방문
     postorder_traversal(node.right)  # 오른쪽 자식 방문
-    print(node.value, end=' ')  # 루트 노드 방문
+    visted.append(node.value)  # 루트 노드 방문
+
+    return visted
 
 # 트리 생성 및 후위순회 실행 예시
 root = Node('A')
@@ -197,5 +242,5 @@ root.left.left = Node('D')
 root.left.right = Node('E')
 root.right.right = Node('F')
 
-postorder_traversal(root)  # 출력: D E B F C A
+print(postorder_traversal(root))  # ['D', 'E', 'B', 'F', 'C', 'A']
 ```
