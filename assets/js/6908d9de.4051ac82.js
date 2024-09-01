@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkmy_website=self.webpackChunkmy_website||[]).push([[6399],{4085:e=>{e.exports=JSON.parse('{"title":"CS","slug":"/category/cs","permalink":"/category/cs","navigation":{"previous":{"title":"BackEnd","permalink":"/backend"},"next":{"title":"CPU","permalink":"/backend/cs/cpu"}}}')}}]);

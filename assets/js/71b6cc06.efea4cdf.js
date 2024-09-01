@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkmy_website=self.webpackChunkmy_website||[]).push([[9500],{6440:e=>{e.exports=JSON.parse('{"title":"Database","slug":"/category/database","permalink":"/category/database","navigation":{"previous":{"title":"CPU","permalink":"/backend/cs/cpu"},"next":{"title":"Concurrency Control","permalink":"/category/concurrency-control"}}}')}}]);
