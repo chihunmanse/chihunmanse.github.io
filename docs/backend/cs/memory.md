@@ -286,3 +286,5 @@ DMA를 위해 시스템 버스를 자주 사용하면 그만큼 CPU가 시스템
 **참조**
 
 https://www.hanbit.co.kr/store/books/look.php?p_code=B9177037040&utm_source=hongong
+
+https://csnote.net
