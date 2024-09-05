@@ -212,7 +212,7 @@ CPU 내부에 여러 개의 명령어 파이프라인을 포함한 구조를 슈
 
 #### 명령어 집합
 
-CPU가 이해할 수 있는 명령어들의 모음을 명령어 집합((Instruction Set)) 또는 명령어 집합 구조(Instruction Set Architecture, ISA) 라고 한다. ISA가 다르면 CPU가 이해할 수 있는 명령어도 어셈블리어도 달라진다. ISA의 설계 방식에 따라 CPU의 성능과 효율성이 크게 달라진다.
+CPU가 이해할 수 있는 명령어들의 모음을 명령어 집합(Instruction Set) 또는 명령어 집합 구조(ISA, Instruction Set Architecture) 라고 한다. ISA가 다르면 CPU가 이해할 수 있는 명령어도 어셈블리어도 달라진다. ISA의 설계 방식에 따라 CPU의 성능과 효율성이 크게 달라진다.
 
 #### CISC
 
