@@ -29,7 +29,11 @@ RAM에는 여러 종류가 있으며, 서버 환경에서는 주로 다음과 �
 
 메모리 주소는 프로세스가 메모리 공간에 접근하는 방식을 결정한다. **물리 주소**는 메모리 하드웨어가 사용하는 주소이고, **논리 주소**는 CPU와 실행 중인 프로그램에서 사용되는 가상의 주소를 의미한다. 운영 체제는 논리 주소를 물리 주소로 변환하여 메모리 보호와 효율성을 높인다.
 
+![](https://csnote.net/assets/img/os/logical_address.png)
+
 논리 주소와 물리 주소 간의 변환은 CPU와 주소 버스 사이에 위치한 메모리 관리 장치(MMU: Memory Management Unit)라는 하드웨어에 의해 수행된다.
+
+![](https://csnote.net/assets/img/os/mmu.png)
 
 **MMU**는 CPU가 발생시킨 논리 주소에 베이스 레지스터 값을 더하여 논리 주소를 물리 주소로 변환한다. 예를 들어 현재 베이스 레지스터에 15000이 저장되어 있고 CPU가 발생시킨 논리 주소가 100번지라면 이 논리 주소는 물리 주소 15100번지(100+15000)로 변환된다.
 
@@ -55,6 +59,8 @@ CPU는 메모리에 접근하기 전에 접근하고자 하는 논리 주소가 
 | 캐시 메모리    | L1, L2, L3 캐시     | 매우 빠름 | 작음      |
 | 메모리 (RAM)   | DRAM, SDRAM         | 빠름      | 중간      |
 | 보조 기억 장치 | SSD, HDD            | 느림      | 큼        |
+
+![](https://csnote.net/assets/img/arch/memoryhierarchy.png)
 
 ### 캐시 메모리
 
@@ -156,6 +162,36 @@ CPU(코어)와 가까운 순서대로 계층 (L1 -> L2 -> L3)을 구성한다. �
 RAID(Redundant Array of Independent Disks)는 주로 하드 디스크와 SSD를 사용하는 기술로, 데이터의 안전성 혹은 높은 성능을 위해 여러 개의 물리적 보조기억장치를 마치 하나의 논리적 보조기억장치처럼 사용하는 기술이다.
 
 ### RAID의 종류
+
+#### RAID 0
+
+여러 개의 보조기억장치에 데이터를 단순히 나누어 저장하는 RAID 구성 방식이다.
+
+![](https://csnote.net/assets/img/arch/raid0.png)
+
+#### RAID 1
+
+복사본을 만드는 RAID 구성 방식이다.
+
+![](https://csnote.net/assets/img/arch/raid1.png)
+
+#### RAID 4
+
+RAID 1처럼 완전한 복사본을 만드는 대신 오류를 검출하고 복구하기 위한 정보(패리티)를 저장한 장치를 두는 RAID 구성 방식이다.
+
+![](https://csnote.net/assets/img/arch/raid4.png)
+
+#### RAID 5
+
+패리티 정보를 분산하여 저장해 RAID 4의 병목현상 문제를 해소한 RAID 구성 방식이다.
+
+![](https://csnote.net/assets/img/arch/raid5.png)
+
+#### RAID 6
+
+서로 다른 두 개의 패리티를 두는 RAID 구성 방식이다.
+
+![](https://csnote.net/assets/img/arch/raid6.png)
 
 | RAID 레벨  | 설명                                                                                              | 장점                   | 단점                      |
 | ---------- | ------------------------------------------------------------------------------------------------- | ---------------------- | ------------------------- |
