@@ -94,6 +94,8 @@ CPU가 해석해야 할 명령어는 명령어 레지스터에 저장된다. 제
 
 프로그램 속 각각의 명령어들은 일정한 주기가 반복되며 실행되는데, 이 주기를 명령어 사이클이라고 한다.
 
+![](https://csnote.net/assets/img/arch/instructioncycle.png)
+
 **인출 사이클**
 
 명령어를 메모리에서 CPU로 가지고 오는 단계
@@ -132,6 +134,8 @@ CPU에 의해 발생하는 인터럽트, CPU가 실행하는 프로그래밍상�
    - 인터럽트 벡터는 인터럽트 서비스 루틴을 식별하기 위한 정보이다. CPU는 하드웨어 인터럽트 요청을 보낸 대상으로부터 데이터 버스를 통해 인터럽트 벡터를 전달받는다.
 6. 인터럽트 서비스 루틴 실행이 끝나면 4에서 백업해 둔 작업을 복구하여 실행을 재개한다.
    - CPU는 인터럽트 서비스 루틴을 실행하기 전에 프로그램 카운터 값 등 현재 프로그램을 재개하기 위해 필요한 모든 내용을 스택에 백업한다.
+
+![](https://csnote.net/assets/img/arch/interrupt.png)
 
 ## CPU 성능 향상 기법
 
@@ -175,6 +179,8 @@ CPU의 연산 속도가 꼭 코어 수에 비례하여 증가하지는 않는다
 4. 명령어 저장
 
 명령어 파이프라이닝이란 명령어 처리의 각 단계를 겹쳐서 실행함으로써 CPU의 효율성을 높이는 기법이다. 예를 들어 CPU는 한 명령어를 인출하는 동안에 다른 명령어를 실행할 수 있고, 한 명령어가 실행되는 동안에 연산 결과를 저장할 수 있다.
+
+![](https://csnote.net/assets/img/arch/pipeline.png)
 
 **파이프라인 위험**
 
@@ -234,3 +240,5 @@ RISC(Reduced Instruction Set Computer)는 CISC와 달리 짧고 규격화된 명
 **참조**
 
 https://www.hanbit.co.kr/store/books/look.php?p_code=B9177037040&utm_source=hongong
+
+https://csnote.net
