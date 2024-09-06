@@ -1,1 +1,0 @@
-"use strict";(self.webpackChunkmy_website=self.webpackChunkmy_website||[]).push([[7862],{7647:e=>{e.exports=JSON.parse('{"label":"Queue","permalink":"/tags/queue","allTagsPath":"/tags","count":1,"items":[{"id":"datastructure-algorithm/queue&stack","title":"Queue & Stack","description":"\ud050 (Queue)","permalink":"/datastructure-algorithm/queue&stack"}]}')}}]);

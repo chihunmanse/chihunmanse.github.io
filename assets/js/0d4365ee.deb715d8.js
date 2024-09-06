@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkmy_website=self.webpackChunkmy_website||[]).push([[1983],{2464:e=>{e.exports=JSON.parse('{"title":"BackEnd","slug":"/backend","permalink":"/backend","navigation":{"previous":{"title":"Priority Queue & Heap","permalink":"/datastructure-algorithm/priority-queue&heap"},"next":{"title":"CS","permalink":"/category/cs"}}}')}}]);
