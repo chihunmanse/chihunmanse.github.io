@@ -39,9 +39,6 @@ const config = {
           sidebarPath: require.resolve("./sidebars.js"),
         },
         blog: false,
-        // blog: {routeBasePath: '/', showReadingTime: true, postsPerPage: 10, blogSidebarTitle: 'All Posts', blogSidebarCount: 'ALL',
-        // blogArchiveComponent: require.resolve('./src/theme/BlogArchivePage')
-        // },
       }),
     ],
   ],
@@ -50,85 +47,29 @@ const config = {
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
       colorMode: {
-        defaultMode: "light",
+        defaultMode: "dark",
       },
       // Replace with your project's social card
       image: "img/m.png",
       navbar: {
-        title: "Chihunmanse",
+        title: "chihunmanse",
         hideOnScroll: true,
         logo: {
           alt: "logo",
           src: "https://p.ipic.vip/o1ih3g.png",
         },
         items: [
-          // {
-          //   type: "docSidebar",
-          //   sidebarId: "blockChain",
-          //   position: "left",
-          //   label: "BlockChain",
-          // },
-          // {
-          //   type: "docSidebar",
-          //   sidebarId: "backEnd",
-          //   position: "left",
-          //   label: "BackEnd",
-          // },
           { to: "/tags", label: "Tags", position: "right" },
           {
             href: "https://github.com/chihunmanse",
             label: "GitHub",
             position: "right",
           },
-          // {
-          //   type: 'dropdown',
-          //   to: 'tags',
-          //   label: 'Category',
-          //   position: 'right',
-          //   items: [
-          //     {to: 'tags/back-end', label: 'BackEnd'},
-          //     {to: 'tags/block-chain', label: 'BlockChain'}
-          //   ],
-          // },
-          // {to: 'archive', label: 'Archive', position: 'right'},
-          // {
-          //   href: "https://github.com/chihunmanse",
-          //   label: "GitHub",
-          //   position: "right",
-          // },
         ],
       },
       footer: {
         style: "light",
-        // links: [
-        //   {
-        //     title: 'Blog',
-        //     items: [
-        //       {
-        //         label: 'Home',
-        //         to: '/',
-        //       },
-        //       {
-        //         label: 'Archive',
-        //         to: 'archive',
-        //       },
-        //       {
-        //         label: 'Tags',
-        //         to: 'tags',
-        //       },
-        //     ],
-        //   },
-        //   {
-        //     title: 'More',
-        //     items: [
-        //       {
-        //         label: 'GitHub',
-        //         href: 'https://github.com/chihunmanse',
-        //       },
-        //     ],
-        //   },
-        // ],
-        copyright: `Copyright © ${new Date().getFullYear()} Chihunmanse Blog, Inc. Built with Docusaurus.`,
+        copyright: `Copyright © ${new Date().getFullYear()} chihunmanse Blog, Inc. Built with Docusaurus.`,
       },
       prism: {
         theme: lightCodeTheme,
