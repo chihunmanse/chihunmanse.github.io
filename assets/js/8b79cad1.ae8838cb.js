@@ -1,1 +1,0 @@
-"use strict";(self.webpackChunkmy_website=self.webpackChunkmy_website||[]).push([[7991],{6138:e=>{e.exports=JSON.parse('{"title":"DevOps","slug":"/devops","permalink":"/devops","navigation":{"previous":{"title":"Chapter 1-5","permalink":"/backend/database/sql-first-step/chapter1-5"},"next":{"title":"Cloud","permalink":"/category/cloud"}}}')}}]);
