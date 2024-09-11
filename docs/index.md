@@ -7,7 +7,7 @@ pagination_prev: null
 
 # Chihun's Dev Blog
 
-## 🧠 [Data Structure & Algorithm](./datastructure-algorithm)
+## 🧠 [DataStructure & Algorithm](./datastructure-algorithm)
 
 ## 🖥️ [BackEnd](./backend)
 
