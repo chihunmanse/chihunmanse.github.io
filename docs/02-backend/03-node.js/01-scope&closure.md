@@ -1,11 +1,11 @@
 ---
-title: 스코프 (Scope) & 클로저 (Closure)
-description: 자바스크립트의 스코프와 클로저에 대해
+title: 자바스크립트 스코프 & 클로저
+description: JavaScript의 스코프와 클로저에 대해
 tags: [BackEnd, JavaScript, Scope, Closure]
 sidebar_position: 1
 ---
 
-# 스코프 (Scope) & 클로저 (Closure)
+# 자바스크립트 스코프 & 클로저
 
 ## 스코프 (Scope)
 

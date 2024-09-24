@@ -1,5 +1,5 @@
 ---
-title: JavaScript
+title: Node.js
 sidebar_position: 3
 ---
 
