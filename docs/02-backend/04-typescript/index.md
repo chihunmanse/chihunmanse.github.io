@@ -1,5 +1,5 @@
 ---
-title: NestJS
+title: TypeScript
 sidebar_position: 4
 ---
 
