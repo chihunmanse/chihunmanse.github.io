@@ -1,6 +1,6 @@
 ---
 title: 네트워크 응용 계층
-tags: [BackEnd, CS, Network, DNS, HTTP, HTTPS]
+tags: [Backend, CS, Network, DNS, HTTP, HTTPS]
 sidebar_position: 12
 ---
 

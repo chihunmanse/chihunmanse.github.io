@@ -1,6 +1,6 @@
 ---
 title: 운영체제와 프로세스, 스레드
-tags: [BackEnd, CS, OS, Process, Thread]
+tags: [Backend, CS, OS, Process, Thread]
 sidebar_position: 3
 ---
 

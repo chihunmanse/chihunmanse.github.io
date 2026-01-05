@@ -1,6 +1,6 @@
 ---
 title: 네트워크 계층
-tags: [BackEnd, CS, Network, IP, Router]
+tags: [Backend, CS, Network, IP, Router]
 sidebar_position: 10
 ---
 

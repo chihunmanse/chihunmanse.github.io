@@ -1,6 +1,6 @@
 ---
 title: 3. Isolation Level
-tags: [BackEnd, DataBase, MySQL, TypeORM, ConcurrencyControl, IsolationLevel]
+tags: [Backend, DataBase, MySQL, TypeORM, ConcurrencyControl, IsolationLevel]
 sidebar_position: 3
 ---
 
@@ -627,10 +627,10 @@ it("should handle concurrent requests with SERIALIZABLE isolation level", async 
   await couponRepository.save({ code: "COUPON_1" });
 
   const result1Promise = couponService.assignCouponWithSerializableIsolation(
-    user1.id
+    user1.id,
   );
   const result2Promise = couponService.assignCouponWithSerializableIsolation(
-    user2.id
+    user2.id,
   );
 
   const [result1, result2] = await Promise.all([
@@ -646,14 +646,14 @@ it("should handle concurrent requests with SERIALIZABLE isolation level", async 
     expect(result1.saveCoupon.userId).toBe(user1.id);
     expect(result2.saveCoupon).toBeUndefined();
     expect(result2.error).toBe(
-      "Deadlock found when trying to get lock; try restarting transaction"
+      "Deadlock found when trying to get lock; try restarting transaction",
     );
   } else {
     expect(result2.saveCoupon.code).toBe("COUPON_1");
     expect(result2.saveCoupon.userId).toBe(user2.id);
     expect(result1.saveCoupon).toBeUndefined();
     expect(result1.error).toBe(
-      "Deadlock found when trying to get lock; try restarting transaction"
+      "Deadlock found when trying to get lock; try restarting transaction",
     );
   }
 });

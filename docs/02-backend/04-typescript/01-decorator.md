@@ -1,6 +1,6 @@
 ---
 title: 타입스크립트 데코레이터
-tags: [BackEnd, TypeScript, Decorator]
+tags: [Backend, TypeScript, Decorator]
 sidebar_position: 1
 ---
 
@@ -14,7 +14,7 @@ sidebar_position: 1
 function Deco(
   target: any,
   propertyKey: string,
-  descriptor: PropertyDescriptor
+  descriptor: PropertyDescriptor,
 ) {
   console.log("데코레이터 실행", propertyKey);
 }
@@ -44,7 +44,7 @@ function Log(message: string) {
   return function (
     target: any,
     propertyKey: string,
-    descriptor: PropertyDescriptor
+    descriptor: PropertyDescriptor,
   ) {
     console.log(`${message} ${propertyKey}`);
   };
@@ -68,7 +68,7 @@ class Example {
 
 ```typescript
 type ClassDecorator = <TFunction extends Function>(
-  target: TFunction
+  target: TFunction,
 ) => TFunction | void;
 ```
 
@@ -82,7 +82,7 @@ type ClassDecorator = <TFunction extends Function>(
 
 ```typescript
 function ClassDecorator<T extends { new (...args: any[]): {} }>(
-  constructor: T
+  constructor: T,
 ) {
   return class extends constructor {
     secondTitle = "secondTitle";
@@ -108,7 +108,7 @@ console.log((example as any).secondTitle);
 
 ```typescript
 function ClassDecorator<T extends { new (...args: any[]): {} }>(
-  constructor: T
+  constructor: T,
 ) {
   constructor.prototype.secondTitle = "secondTitle";
 }
@@ -138,7 +138,7 @@ console.log((example as any).secondTitle);
 type MethodDecorator = <T>(
   target: Object,
   propertyKey: string | symbol,
-  descriptor: TypedPropertyDescriptor<T>
+  descriptor: TypedPropertyDescriptor<T>,
 ) => TypedPropertyDescriptor<T> | void;
 ```
 
@@ -169,7 +169,7 @@ type MethodDecorator = <T>(
 function MethodDecorator(
   target: any,
   propertyKey: string,
-  descriptor: PropertyDescriptor
+  descriptor: PropertyDescriptor,
 ) {
   console.log("target : ", target);
   console.log("propertyKey : ", propertyKey);
@@ -190,12 +190,12 @@ class Example {
 
 console.log(
   "staticMethod descriptor : ",
-  Object.getOwnPropertyDescriptor(Example, "staticMethod")
+  Object.getOwnPropertyDescriptor(Example, "staticMethod"),
 );
 
 console.log(
   "instanceMethod descriptor : ",
-  Object.getOwnPropertyDescriptor(Example.prototype, "instanceMethod")
+  Object.getOwnPropertyDescriptor(Example.prototype, "instanceMethod"),
 );
 
 // target :  { instanceMethod: [Function (anonymous)] }
@@ -233,7 +233,7 @@ function Logger(level: string) {
   return function (
     target: any,
     propertyKey: string,
-    descriptor: PropertyDescriptor
+    descriptor: PropertyDescriptor,
   ) {
     const original = descriptor.value; // 원본 함수
 
@@ -292,7 +292,7 @@ function Configurable(value: boolean) {
   return function (
     target: any,
     propertyKey: string,
-    descriptor: PropertyDescriptor
+    descriptor: PropertyDescriptor,
   ) {
     console.log(`${propertyKey}의 descriptor:`, descriptor);
     descriptor.configurable = value;
@@ -432,7 +432,7 @@ profile.username = "Bob";
 type ParameterDecorator = (
   target: Object,
   propertyKey: string | symbol,
-  parameterIndex: number
+  parameterIndex: number,
 ) => void;
 ```
 
@@ -465,7 +465,7 @@ function validateParams(target: any, propertyName: string, args: any[]) {
     for (const index of requiredIndices) {
       if (args[index] === undefined || args[index] === null) {
         throw new Error(
-          `Argument at index ${index} is required for ${propertyName}`
+          `Argument at index ${index} is required for ${propertyName}`,
         );
       }
     }
@@ -476,7 +476,7 @@ function validateParams(target: any, propertyName: string, args: any[]) {
 function Validate(
   target: any,
   propertyName: string,
-  descriptor: PropertyDescriptor
+  descriptor: PropertyDescriptor,
 ) {
   const originalMethod = descriptor.value;
   descriptor.value = function (...args: any[]) {
@@ -588,7 +588,7 @@ function f(key: string) {
   return function (
     target: any,
     propertyKey: string,
-    descriptor: PropertyDescriptor
+    descriptor: PropertyDescriptor,
   ) {
     console.log("호출:", key);
   };

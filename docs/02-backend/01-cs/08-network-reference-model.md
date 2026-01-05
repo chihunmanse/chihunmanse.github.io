@@ -1,6 +1,6 @@
 ---
 title: 네트워크 참조 모델
-tags: [BackEnd, CS, Network, OSI, TCP/IP]
+tags: [Backend, CS, Network, OSI, TCP/IP]
 sidebar_position: 8
 ---
 

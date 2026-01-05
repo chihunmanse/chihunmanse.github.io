@@ -1,6 +1,6 @@
 ---
 title: 프로세스 동기화
-tags: [BackEnd, CS, OS, Process]
+tags: [Backend, CS, OS, Process]
 sidebar_position: 5
 ---
 

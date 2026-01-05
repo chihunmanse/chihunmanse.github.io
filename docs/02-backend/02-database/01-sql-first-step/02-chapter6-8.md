@@ -1,6 +1,6 @@
 ---
 title: Chapter 6-8
-tags: [BackEnd, DataBase, SQL]
+tags: [Backend, DataBase, SQL]
 sidebar_position: 2
 ---
 

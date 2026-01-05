@@ -1,6 +1,6 @@
 ---
 title: 네트워크 전송 계층
-tags: [BackEnd, CS, Network, TCP, UDP]
+tags: [Backend, CS, Network, TCP, UDP]
 sidebar_position: 11
 ---
 

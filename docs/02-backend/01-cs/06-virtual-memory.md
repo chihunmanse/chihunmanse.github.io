@@ -1,6 +1,6 @@
 ---
 title: 가상 메모리
-tags: [BackEnd, CS, OS, Memory, VirtualMemory]
+tags: [Backend, CS, OS, Memory, VirtualMemory]
 sidebar_position: 6
 ---
 

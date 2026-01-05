@@ -1,6 +1,6 @@
 ---
 title: MySQL Master/Slave Replication
-tags: [BackEnd, DataBase, MySQL, TypeORM]
+tags: [Backend, DataBase, MySQL, TypeORM]
 sidebar_position: 3
 ---
 
@@ -196,7 +196,7 @@ try {
   const userFromSlave = await slaveQueryRunner.query(
     "SELECT * FROM users WHERE id = $1",
     [userId],
-    slaveQueryRunner
+    slaveQueryRunner,
   );
 } finally {
   return slaveQueryRunner.release();

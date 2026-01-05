@@ -1,0 +1,51 @@
+---
+title: Home
+sidebar_position: 1
+pagination_next: null
+pagination_prev: null
+---
+
+import styles from "@site/src/css/homepage.module.css";
+
+<div className={styles.homepageContainer}>
+
+<div className={styles.categoriesGrid}>
+  <a href="/datastructure-algorithm" className={styles.categoryCard}>
+    <div className={styles.categoryIcon}>🧠</div>
+    <div className={styles.categoryContent}>
+      <h2 className={styles.categoryTitle}>DataStructure & Algorithm</h2>
+      <p className={styles.categoryDescription}>Learning notes on data structures and algorithms</p>
+    </div>
+  </a>
+
+<a href="/backend" className={styles.categoryCard}>
+  <div className={styles.categoryIcon}>💻</div>
+  <div className={styles.categoryContent}>
+    <h2 className={styles.categoryTitle}>Backend</h2>
+    <p className={styles.categoryDescription}>
+      CS, Databases, Node.js, and more
+    </p>
+  </div>
+</a>
+
+<a href="/devops" className={styles.categoryCard}>
+  <div className={styles.categoryIcon}>🚀</div>
+  <div className={styles.categoryContent}>
+    <h2 className={styles.categoryTitle}>DevOps</h2>
+    <p className={styles.categoryDescription}>AWS, Docker, Kubernetes, CI/CD</p>
+  </div>
+</a>
+
+<a href="/blockchain" className={styles.categoryCard}>
+  <div className={styles.categoryIcon}>⛓️</div>
+  <div className={styles.categoryContent}>
+    <h2 className={styles.categoryTitle}>BlockChain</h2>
+    <p className={styles.categoryDescription}>
+      Ethereum, Solidity, Smart Contract
+    </p>
+  </div>
+</a>
+
+</div>
+
+</div>

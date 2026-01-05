@@ -1,7 +1,7 @@
 ---
 title: Node.js 이벤트 루프
 description: Node.js의 이벤트 루프에 대해
-tags: [BackEnd, Node.js, EventLoop]
+tags: [Backend, Node.js, EventLoop]
 sidebar_position: 2
 ---
 

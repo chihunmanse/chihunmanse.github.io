@@ -1,7 +1,7 @@
 ---
 title: Request LifeCycle
 description: NestJS의 요청 수명 주기에 대해
-tags: [BackEnd, NestJS, Middleware, Guard, Interceptor, Pipe, ExceptionFilter]
+tags: [Backend, NestJS, Middleware, Guard, Interceptor, Pipe, ExceptionFilter]
 sidebar_position: 2
 ---
 
@@ -93,7 +93,7 @@ import { Observable } from "rxjs";
 @Injectable()
 export class AuthGuard implements CanActivate {
   canActivate(
-    context: ExecutionContext
+    context: ExecutionContext,
   ): boolean | Promise<boolean> | Observable<boolean> {
     const request = context.switchToHttp().getRequest();
     return validateRequest(request);

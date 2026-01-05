@@ -1,6 +1,6 @@
 ---
 title: 메모리, 보조기억장치, 입출력장치
-tags: [BackEnd, CS, Memory]
+tags: [Backend, CS, Memory]
 sidebar_position: 2
 ---
 

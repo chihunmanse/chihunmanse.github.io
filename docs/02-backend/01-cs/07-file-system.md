@@ -1,6 +1,6 @@
 ---
 title: 파일 시스템
-tags: [BackEnd, CS, OS, FileSystem]
+tags: [Backend, CS, OS, FileSystem]
 sidebar_position: 7
 ---
 

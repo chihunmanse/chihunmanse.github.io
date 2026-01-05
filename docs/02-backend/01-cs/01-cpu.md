@@ -1,6 +1,6 @@
 ---
 title: CPU
-tags: [BackEnd, CS, CPU]
+tags: [Backend, CS, CPU]
 sidebar_position: 1
 ---
 

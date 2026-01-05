@@ -1,7 +1,7 @@
 ---
 title: IoC & NestJS DI
 description: IoC 원칙과 NestJS의 의존성 주입에 대해
-tags: [BackEnd, NestJS, IoC, DependencyInjection]
+tags: [Backend, NestJS, IoC, DependencyInjection]
 sidebar_position: 1
 ---
 
@@ -261,12 +261,12 @@ export class Injector {
     collection: Map<InjectionToken, InstanceWrapper>,
     moduleRef: Module,
     contextId = STATIC_CONTEXT,
-    inquirer?: InstanceWrapper
+    inquirer?: InstanceWrapper,
   ) {
     const inquirerId = this.getInquirerId(inquirer); // 요청자의 ID를 가져옴
     const instanceHost = wrapper.getInstanceByContextId(
       this.getContextId(contextId, wrapper),
-      inquirerId
+      inquirerId,
     ); // 주어진 컨텍스트 ID로 인스턴스 검색
 
     // 이미 주입 중인 인스턴스가 있는 경우(순환 의존성 체크)
@@ -293,7 +293,7 @@ export class Injector {
       callback, // 콜백으로 인스턴스 생성 후 처리
       contextId,
       wrapper,
-      inquirer
+      inquirer,
     );
   }
 
@@ -305,7 +305,7 @@ export class Injector {
     callback: (args: unknown[]) => void | Promise<void>,
     contextId = STATIC_CONTEXT,
     inquirer?: InstanceWrapper, // 요청자
-    parentInquirer?: InstanceWrapper // 상위 요청자
+    parentInquirer?: InstanceWrapper, // 상위 요청자
   ) {
     let inquirerId = this.getInquirerId(inquirer);
     const metadata = wrapper.getCtorMetadata();
@@ -316,7 +316,7 @@ export class Injector {
         metadata,
         contextId,
         inquirer,
-        parentInquirer
+        parentInquirer,
       );
       return callback(deps);
     }
@@ -339,11 +339,11 @@ export class Injector {
           moduleRef,
           contextId,
           inquirer,
-          index
+          index,
         );
         const instanceHost = paramWrapper.getInstanceByContextId(
           this.getContextId(contextId, paramWrapper), // 파라미터 인스턴스 생성
-          inquirerId
+          inquirerId,
         );
         if (!instanceHost.isResolved && !paramWrapper.forwardRef) {
           isResolved = false;

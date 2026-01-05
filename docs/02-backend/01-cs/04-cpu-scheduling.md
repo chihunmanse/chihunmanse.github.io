@@ -1,6 +1,6 @@
 ---
 title: CPU 스케줄링
-tags: [BackEnd, CS, OS, CPU, Scheduling]
+tags: [Backend, CS, OS, CPU, Scheduling]
 sidebar_position: 4
 ---
 

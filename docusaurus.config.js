@@ -9,8 +9,7 @@ const projectName = "chihunmanse.github.io";
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
-  title: "chihunmanse",
-  tagline: "",
+  title: "Chihun's Dev Blog",
   favicon: "img/favicon.ico",
   url: `https://${organizationName}.github.io`,
   baseUrl: "/",
@@ -52,12 +51,8 @@ const config = {
       // Replace with your project's social card
       image: "img/m.png",
       navbar: {
-        title: "chihunmanse",
+        title: "Chihun's Dev Blog",
         hideOnScroll: true,
-        logo: {
-          alt: "logo",
-          src: "https://p.ipic.vip/o1ih3g.png",
-        },
         items: [
           { to: "/tags", label: "Tags", position: "right" },
           {

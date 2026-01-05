@@ -1,11 +1,117 @@
 .features {
   display: flex;
   align-items: center;
-  padding: 2rem 0;
+  padding: 4rem 0;
   width: 100%;
 }
 
-.featureSvg {
-  height: 200px;
-  width: 200px;
+.featureCard {
+  height: 100%;
+  margin-bottom: 2rem;
+}
+
+.featureLink {
+  display: block;
+  height: 100%;
+  padding: 2rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.05) 0%, rgba(59, 130, 246, 0.02) 100%);
+  transition: all 0.3s ease;
+  text-decoration: none;
+  color: inherit;
+}
+
+[data-theme='dark'] .featureLink {
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.6) 100%);
+}
+
+.featureLink:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.15);
+  border-color: rgba(37, 99, 235, 0.3);
+  text-decoration: none;
+  color: inherit;
+}
+
+[data-theme='dark'] .featureLink:hover {
+  box-shadow: 0 12px 24px rgba(96, 165, 250, 0.2);
+  border-color: rgba(96, 165, 250, 0.3);
+  background: linear-gradient(135deg, rgba(30, 41, 59, 1) 0%, rgba(15, 23, 42, 0.8) 100%);
+}
+
+.featureIcon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+  display: block;
+  text-align: center;
+  filter: grayscale(0.2);
+  transition: transform 0.3s ease;
+}
+
+.featureLink:hover .featureIcon {
+  transform: scale(1.1);
+}
+
+.featureTitle {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  text-align: center;
+  letter-spacing: -0.02em;
+  color: var(--ifm-heading-color);
+}
+
+.featureDescription {
+  text-align: center;
+  margin-bottom: 1.5rem;
+  line-height: 1.6;
+  color: var(--ifm-color-content-secondary);
+  font-size: 0.95rem;
+}
+
+.featureTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+  margin-top: 1.5rem;
+}
+
+.tag {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border-radius: 4px;
+  background-color: rgba(37, 99, 235, 0.1);
+  color: var(--ifm-color-primary);
+  border: 1px solid rgba(37, 99, 235, 0.2);
+  font-family: var(--ifm-font-family-monospace);
+  letter-spacing: 0.02em;
+}
+
+[data-theme='dark'] .tag {
+  background-color: rgba(96, 165, 250, 0.15);
+  color: var(--ifm-color-primary-lighter);
+  border-color: rgba(96, 165, 250, 0.3);
+}
+
+@media screen and (max-width: 996px) {
+  .features {
+    padding: 2rem 0;
+  }
+  
+  .featureLink {
+    padding: 1.5rem;
+  }
+  
+  .featureIcon {
+    font-size: 2.5rem;
+  }
+  
+  .featureTitle {
+    font-size: 1.25rem;
+  }
 }

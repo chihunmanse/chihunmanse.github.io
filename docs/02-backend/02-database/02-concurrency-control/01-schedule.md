@@ -1,6 +1,6 @@
 ---
 title: 1. Schedule
-tags: [BackEnd, DataBase, ConcurrencyControl, Schedule]
+tags: [Backend, DataBase, ConcurrencyControl, Schedule]
 sidebar_position: 1
 ---
 

@@ -1,6 +1,6 @@
 ---
 title: 네트워크 물리 계층 & 데이터 링크 계층
-tags: [BackEnd, CS, Network, Ethernet, Hub, Switch]
+tags: [Backend, CS, Network, Ethernet, Hub, Switch]
 sidebar_position: 9
 ---
 
