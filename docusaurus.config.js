@@ -42,6 +42,17 @@ const config = {
     ],
   ],
 
+  plugins: [
+    function tocScrollSyncPlugin(context, options) {
+      return {
+        name: "toc-scroll-sync",
+        getClientModules() {
+          return [require.resolve("./src/clientModules.ts")];
+        },
+      };
+    },
+  ],
+
   themeConfig:
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
@@ -61,10 +72,6 @@ const config = {
             position: "right",
           },
         ],
-      },
-      footer: {
-        style: "light",
-        copyright: `Copyright © ${new Date().getFullYear()} chihunmanse Blog, Inc. Built with Docusaurus.`,
       },
       prism: {
         theme: lightCodeTheme,
