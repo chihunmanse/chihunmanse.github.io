@@ -1,6 +1,6 @@
 ---
 title: ECDSA (Elliptic Curve Digital Signature Algorithm)
-description: 블록체인 트랜잭션의 핵심, 타원곡선 기반 디지털 서명 알고리즘의 원리와 구현
+description: Principles and Implementation of Elliptic Curve Digital Signature Algorithms
 keywords:
   [
     ECDSA,
@@ -405,6 +405,10 @@ Curve25519 곡선을 사용하는 서명 알고리즘으로, Solana, Cardano, Po
 
 ethers.js를 사용해 서명 생성, 검증, r/s/v 값 테스트를 해보자.
 
+:::info 예제 코드
+전체 테스트 코드는 [crypto-examples/cryptography-examples/03-ecdsa](https://github.com/chihunmanse/crypto-examples/tree/main/cryptography-examples/03-ecdsa)에서 확인할 수 있다.
+:::
+
 ```ts title="ecdsa.ts"
 import { ethers } from "ethers";
 
@@ -414,51 +418,51 @@ const wallet = new ethers.Wallet(privateKey);
 const message = "Hello, ECDSA!";
 
 async function run() {
-  console.log("=== 키 정보 ===");
-  console.log("개인키:", wallet.privateKey);
-  console.log("공개키:", wallet.signingKey.publicKey);
-  console.log("주소:", wallet.address);
+  console.log("=== Key Info ===");
+  console.log("Private Key:", wallet.privateKey);
+  console.log("Public Key:", wallet.signingKey.publicKey);
+  console.log("Address:", wallet.address);
 
-  console.log("\n=== 서명 생성 ===");
-  console.log("메시지:", message);
+  console.log("\n=== Sign ===");
+  console.log("Message:", message);
   const signature = await wallet.signMessage(message);
-  console.log("서명:", signature);
+  console.log("Signature:", signature);
 
-  console.log("\n=== 서명 검증 ===");
+  console.log("\n=== Verify ===");
   const recoveredAddress = ethers.verifyMessage(message, signature);
-  console.log("복구된 주소:", recoveredAddress);
-  console.log("원본 주소:", wallet.address);
-  console.log("검증 성공:", recoveredAddress === wallet.address);
+  console.log("Recovered Address:", recoveredAddress);
+  console.log("Original Address:", wallet.address);
+  console.log("Match:", recoveredAddress === wallet.address);
 
-  console.log("\n=== r, s, v 분석 ===");
-  console.log("전체 서명 (65 bytes):", signature);
-  console.log("서명 길이:", ethers.getBytes(signature).length, "bytes");
+  console.log("\n=== r, s, v Analysis ===");
+  console.log("Full Signature (65 bytes):", signature);
+  console.log("Signature Length:", ethers.getBytes(signature).length, "bytes");
   const sig = ethers.Signature.from(signature);
   console.log("r (32 bytes):", sig.r);
   console.log("s (32 bytes):", sig.s);
   console.log("v (recovery id):", sig.v);
 
-  console.log("\n=== v 값 해석 ===");
+  console.log("\n=== v Value Interpretation ===");
   if (sig.v === 27 || sig.v === 28) {
-    console.log("EIP-155 이전 형식 (legacy)");
-    console.log("recovery id:", sig.v - 27);
+    console.log("Pre-EIP-155 format (legacy)");
+    console.log("Recovery ID:", sig.v - 27);
   } else {
     const recoveryId = (sig.v - 35) % 2;
     const chainId = Math.floor((sig.v - 35) / 2);
-    console.log("EIP-155 형식");
-    console.log("recovery id:", recoveryId);
-    console.log("chain id:", chainId);
+    console.log("EIP-155 format");
+    console.log("Recovery ID:", recoveryId);
+    console.log("Chain ID:", chainId);
   }
 
-  console.log("\n=== 공개키 복구 ===");
+  console.log("\n=== Public Key Recovery ===");
   const messageHash = ethers.hashMessage(message);
   const recoveredPublicKey = ethers.SigningKey.recoverPublicKey(
     messageHash,
-    signature,
+    signature
   );
-  console.log("복구된 공개키:", recoveredPublicKey);
-  console.log("원본 공개키:", wallet.signingKey.publicKey);
-  console.log("일치 여부:", recoveredPublicKey === wallet.signingKey.publicKey);
+  console.log("Recovered Public Key:", recoveredPublicKey);
+  console.log("Original Public Key:", wallet.signingKey.publicKey);
+  console.log("Match:", recoveredPublicKey === wallet.signingKey.publicKey);
 }
 
 run();
@@ -467,35 +471,35 @@ run();
 위 코드를 실행하면 다음과 같은 결과를 확인할 수 있다.
 
 ```shell
-=== 키 정보 ===
-개인키: 0x4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318
-공개키: 0x04b9d7ea8c...
-주소: 0x2c7536E3605D9C16a7a3D7b1898e529396a65c23
+=== Key Info ===
+Private Key: 0x4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318
+Public Key: 0x044e3b81af9c2234cad09d679ce6035ed1392347ce64ce405f5dcd36228a25de6e47fd35c4215d1edf53e6f83de344615ce719bdb0fd878f6ed76f06dd277956de
+Address: 0x2c7536E3605D9C16a7a3D7b1898e529396a65c23
 
-=== 서명 생성 ===
-메시지: Hello, ECDSA!
-서명: 0xfdaf07b43e6119f3a15c6edd90b11ae7991a083d36ba26e430d698ed0e72c06865405f56d3a9452ad020500150c4bf1bef71f683cbcc20501d65b39fad5e9c4a1c
+=== Sign ===
+Message: Hello, ECDSA!
+Signature: 0xfdaf07b43e6119f3a15c6edd90b11ae7991a083d36ba26e430d698ed0e72c06865405f56d3a9452ad020500150c4bf1bef71f683cbcc20501d65b39fad5e9c4a1c
 
-=== 서명 검증 ===
-복구된 주소: 0x2c7536E3605D9C16a7a3D7b1898e529396a65c23
-원본 주소: 0x2c7536E3605D9C16a7a3D7b1898e529396a65c23
-검증 성공: true
+=== Verify ===
+Recovered Address: 0x2c7536E3605D9C16a7a3D7b1898e529396a65c23
+Original Address: 0x2c7536E3605D9C16a7a3D7b1898e529396a65c23
+Match: true
 
-=== r, s, v 분석 ===
-전체 서명 (65 bytes): 0xfdaf07b43e6119f3a15c6edd90b11ae7991a083d36ba26e430d698ed0e72c06865405f56d3a9452ad020500150c4bf1bef71f683cbcc20501d65b39fad5e9c4a1c
-서명 길이: 65 bytes
+=== r, s, v Analysis ===
+Full Signature (65 bytes): 0xfdaf07b43e6119f3a15c6edd90b11ae7991a083d36ba26e430d698ed0e72c06865405f56d3a9452ad020500150c4bf1bef71f683cbcc20501d65b39fad5e9c4a1c
+Signature Length: 65 bytes
 r (32 bytes): 0xfdaf07b43e6119f3a15c6edd90b11ae7991a083d36ba26e430d698ed0e72c068
 s (32 bytes): 0x65405f56d3a9452ad020500150c4bf1bef71f683cbcc20501d65b39fad5e9c4a
 v (recovery id): 28
 
-=== v 값 해석 ===
-EIP-155 이전 형식 (legacy)
-recovery id: 1
+=== v Value Interpretation ===
+Pre-EIP-155 format (legacy)
+Recovery ID: 1
 
-=== 공개키 복구 ===
-복구된 공개키: 0x044e3b81af9c2234cad09d679ce6035ed1392347ce64ce405f5dcd36228a25de6e47fd35c4215d1edf53e6f83de344615ce719bdb0fd878f6ed76f06dd277956de
-원본 공개키: 0x044e3b81af9c2234cad09d679ce6035ed1392347ce64ce405f5dcd36228a25de6e47fd35c4215d1edf53e6f83de344615ce719bdb0fd878f6ed76f06dd277956de
-일치 여부: true
+=== Public Key Recovery ===
+Recovered Public Key: 0x044e3b81af9c2234cad09d679ce6035ed1392347ce64ce405f5dcd36228a25de6e47fd35c4215d1edf53e6f83de344615ce719bdb0fd878f6ed76f06dd277956de
+Original Public Key: 0x044e3b81af9c2234cad09d679ce6035ed1392347ce64ce405f5dcd36228a25de6e47fd35c4215d1edf53e6f83de344615ce719bdb0fd878f6ed76f06dd277956de
+Match: true
 ```
 
 같은 메시지라도 서명을 다시 생성하면 값이 달라질 수 있다. 이는 nonce(k)가 매번 달라지기 때문이다.

@@ -1,6 +1,6 @@
 ---
 title: Elliptic Curve Cryptography
-description: 블록체인 보안의 수학적 기반, 타원곡선의 원리와 키 생성
+description: Elliptic Curve Fundamentals and Key Generation
 keywords:
   [
     elliptic curve,
@@ -371,6 +371,10 @@ Q는 타원곡선 위의 점이므로 (x, y) 좌표로 표현된다.
 
 실제 코드로 타원곡선 연산과 키 생성을 확인해보자.
 
+:::info 예제 코드
+전체 테스트 코드는 [crypto-examples/cryptography-examples/02-elliptic-curve](https://github.com/chihunmanse/crypto-examples/tree/main/cryptography-examples/02-elliptic-curve)에서 확인할 수 있다.
+:::
+
 ```mdx-code-block
 <Tabs>
 <TabItem value="ec-math.ts" label="타원곡선 연산">
@@ -378,20 +382,19 @@ Q는 타원곡선 위의 점이므로 (x, y) 좌표로 표현된다.
 
 ```ts title="ec-math.ts"
 // y² = x³ + ax + b (mod p)
-const p = 17n; // 유한체 크기
+const p = 17n; // finite field size
 const a = 0n;
 const b = 7n;
 
-// 점 타입 (null = 무한원점 O)
+// Point type (null = point at infinity O)
 type Point = { x: bigint; y: bigint } | null;
 
-// 모듈러 연산: 항상 0 ~ p-1 범위로 정리
+// Modular arithmetic: normalize to 0 ~ p-1 range
 function mod(n: bigint): bigint {
   return ((n % p) + p) % p;
 }
 
-// 모듈러 역원: n * inv ≡ 1 (mod p)
-// 작은 p라서 단순 탐색으로 구한다
+// Modular inverse: n * inv ≡ 1 (mod p)
 function inverse(n: bigint): bigint {
   const nMod = mod(n);
   for (let i = 1n; i < p; i++) {
@@ -400,15 +403,15 @@ function inverse(n: bigint): bigint {
   throw new Error("inverse not found");
 }
 
-// 점이 곡선 위에 있는지 확인
+// Check if point is on curve
 function isOnCurve(P: Point): boolean {
-  if (P === null) return true; // 무한원점
+  if (P === null) return true;
   const left = mod(P.y * P.y);
   const right = mod(P.x * P.x * P.x + a * P.x + b);
   return left === right;
 }
 
-// 점 덧셈: P + Q
+// Point addition: P + Q
 function pointAdd(P: Point, Q: Point): Point {
   if (P === null) return Q;
   if (Q === null) return P;
@@ -419,23 +422,21 @@ function pointAdd(P: Point, Q: Point): Point {
   // P + (-P) = O
   if (x1 === x2 && mod(y1 + y2) === 0n) return null;
 
-  // 1) 기울기 계산
   let slope: bigint;
   if (x1 === x2 && y1 === y2) {
-    // 점 두 배: 접선의 기울기
+    // Point doubling: tangent line slope
     slope = mod((3n * x1 * x1 + a) * inverse(2n * y1));
   } else {
-    // 일반 덧셈: 두 점을 잇는 직선의 기울기
+    // General addition: secant line slope
     slope = mod((y2 - y1) * inverse(x2 - x1));
   }
 
-  // 2) 새 점 계산
   const x3 = mod(slope * slope - x1 - x2);
   const y3 = mod(slope * (x1 - x3) - y1);
   return { x: x3, y: y3 };
 }
 
-// 스칼라 곱셈: k * P (Double-and-Add)
+// Scalar multiplication: k * P (Double-and-Add)
 function scalarMultiply(k: bigint, P: Point): Point {
   if (P === null || k === 0n) return null;
 
@@ -445,10 +446,8 @@ function scalarMultiply(k: bigint, P: Point): Point {
 
   while (n > 0n) {
     if (n & 1n) {
-      // 비트가 1이면 현재 addend를 더한다
       result = pointAdd(result, addend);
     }
-    // 다음 비트를 위해 점 두 배
     addend = pointAdd(addend, addend);
     n >>= 1n;
   }
@@ -456,7 +455,7 @@ function scalarMultiply(k: bigint, P: Point): Point {
   return result;
 }
 
-// 곡선 위의 모든 점 찾기
+// Find all points on curve
 function findAllPoints(): Point[] {
   const points: Point[] = [null];
   for (let x = 0n; x < p; x++) {
@@ -468,30 +467,29 @@ function findAllPoints(): Point[] {
   return points;
 }
 
-// 테스트
-console.log("=== 타원곡선 y² = x³ + 7 (mod 17) ===\n");
+console.log("=== Elliptic Curve y² = x³ + 7 (mod 17) ===\n");
 
 const allPoints = findAllPoints();
-console.log(`곡선 위의 점 개수 (위수): ${allPoints.length}`);
-console.log("점 목록:");
+console.log(`Points on curve (order): ${allPoints.length}`);
+console.log("Point list:");
 allPoints.forEach((pt, i) => {
   if (pt === null) {
-    console.log(`  [${i}] O (무한원점)`);
+    console.log(`  [${i}] O (point at infinity)`);
   } else {
     console.log(`  [${i}] (${pt.x}, ${pt.y})`);
   }
 });
 
-// 생성점 선택 및 스칼라 곱셈
+// Generator point and scalar multiplication
 const G: Point = { x: 6n, y: 11n };
-console.log(`\n생성점 G = (${G.x}, ${G.y})`);
-console.log(`곡선 위에 있는지: ${isOnCurve(G)}`);
+console.log(`\nGenerator G = (${G.x}, ${G.y})`);
+console.log(`On curve: ${isOnCurve(G)}`);
 
-console.log("\n=== 스칼라 곱셈 테스트 (k × G) ===");
+console.log("\n=== Scalar Multiplication (k × G) ===");
 for (let k = 1n; k <= 10n; k++) {
   const result = scalarMultiply(k, G);
   if (result === null) {
-    console.log(`${k}G = O (무한원점)`);
+    console.log(`${k}G = O (point at infinity)`);
   } else {
     console.log(`${k}G = (${result.x}, ${result.y})`);
   }
@@ -505,13 +503,6 @@ for (let k = 1n; k <= 10n; k++) {
 
 ```ts title="key-generation.ts"
 import { ethers } from "ethers";
-
-console.log("=== 이더리움 키 생성 ===\n");
-
-// 고정 개인키 사용 (예시가 매번 동일하게 나오도록)
-const privateKey =
-  "0x4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318";
-const wallet = new ethers.Wallet(privateKey);
 
 function hexBitLength(hex: string): number {
   return (hex.length - 2) * 4;
@@ -535,34 +526,39 @@ function compressPubKey(uncompressed: string) {
   return { compressed, prefix, yIsEven };
 }
 
-console.log("개인키 (256비트 정수):");
+console.log("=== Ethereum Key Generation ===\n");
+
+// Fixed private key for reproducible output
+const privateKey =
+  "0x4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318";
+const wallet = new ethers.Wallet(privateKey);
+
+console.log("Private Key (256-bit integer):");
 console.log(`  ${wallet.privateKey}`);
 console.log(
-  `  길이: ${wallet.privateKey.length - 2} hex chars = ${hexBitLength(
-    wallet.privateKey,
-  )} bits`,
+  `  Length: ${wallet.privateKey.length - 2} hex chars = ${hexBitLength(
+    wallet.privateKey
+  )} bits`
 );
 
-console.log("\n공개키 (비압축, 512비트 = x좌표 + y좌표):");
+console.log("\nPublic Key (uncompressed, 512 bits = x + y):");
 const publicKey = wallet.signingKey.publicKey;
 console.log(`  ${publicKey}`);
 const uncompressed = splitUncompressedPubKey(publicKey);
-console.log(`  접두사: ${uncompressed.prefix} (0x04 = 비압축)`);
-console.log(`  x 좌표: ${uncompressed.x}`);
-console.log(`  y 좌표: ${uncompressed.y}`);
+console.log(`  Prefix: ${uncompressed.prefix} (0x04 = uncompressed)`);
+console.log(`  x: ${uncompressed.x}`);
+console.log(`  y: ${uncompressed.y}`);
 
-// 압축 공개키: x좌표 + y의 짝/홀 정보
+// Compressed public key: x + y parity
 const compressed = compressPubKey(publicKey);
 
-console.log("\n공개키 (압축, 264비트):");
+console.log("\nPublic Key (compressed, 264 bits):");
 console.log(`  ${compressed.compressed}`);
 console.log(
-  `  접두사: ${compressed.prefix} (${
-    compressed.yIsEven ? "y 짝수" : "y 홀수"
-  })`,
+  `  Prefix: ${compressed.prefix} (${compressed.yIsEven ? "y even" : "y odd"})`
 );
 
-console.log("\n주소 (공개키의 Keccak256 해시 마지막 20바이트):");
+console.log("\nAddress (last 20 bytes of Keccak256(pubkey)):");
 console.log(`  ${wallet.address}`);
 ```
 
@@ -574,11 +570,11 @@ console.log(`  ${wallet.address}`);
 위 코드들의 실행 결과:
 
 ```shell
-=== 타원곡선 y² = x³ + 7 (mod 17) ===
+=== Elliptic Curve y² = x³ + 7 (mod 17) ===
 
-곡선 위의 점 개수 (위수): 18
-점 목록:
-  [0] O (무한원점)
+Points on curve (order): 18
+Point list:
+  [0] O (point at infinity)
   [1] (1, 5)
   [2] (1, 12)
   [3] (2, 7)
@@ -597,10 +593,10 @@ console.log(`  ${wallet.address}`);
   [16] (15, 4)
   [17] (15, 13)
 
-생성점 G = (6, 11)
-곡선 위에 있는지: true
+Generator G = (6, 11)
+On curve: true
 
-=== 스칼라 곱셈 테스트 (k × G) ===
+=== Scalar Multiplication (k × G) ===
 1G = (6, 11)
 2G = (1, 12)
 3G = (8, 3)
@@ -614,23 +610,23 @@ console.log(`  ${wallet.address}`);
 ```
 
 ```shell
-=== 이더리움 키 생성 ===
+=== Ethereum Key Generation ===
 
-개인키 (256비트 정수):
+Private Key (256-bit integer):
   0x4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318
-  길이: 64 hex chars = 256 bits
+  Length: 64 hex chars = 256 bits
 
-공개키 (비압축, 512비트 = x좌표 + y좌표):
+Public Key (uncompressed, 512 bits = x + y):
   0x044e3b81af9c2234cad09d679ce6035ed1392347ce64ce405f5dcd36228a25de6e47fd35c4215d1edf53e6f83de344615ce719bdb0fd878f6ed76f06dd277956de
-  접두사: 0x04 (0x04 = 비압축)
-  x 좌표: 4e3b81af9c2234cad09d679ce6035ed1392347ce64ce405f5dcd36228a25de6e
-  y 좌표: 47fd35c4215d1edf53e6f83de344615ce719bdb0fd878f6ed76f06dd277956de
+  Prefix: 0x04 (0x04 = uncompressed)
+  x: 4e3b81af9c2234cad09d679ce6035ed1392347ce64ce405f5dcd36228a25de6e
+  y: 47fd35c4215d1edf53e6f83de344615ce719bdb0fd878f6ed76f06dd277956de
 
-공개키 (압축, 264비트):
+Public Key (compressed, 264 bits):
   0x024e3b81af9c2234cad09d679ce6035ed1392347ce64ce405f5dcd36228a25de6e
-  접두사: 0x02 (y 짝수)
+  Prefix: 0x02 (y even)
 
-주소 (공개키의 Keccak256 해시 마지막 20바이트):
+Address (last 20 bytes of Keccak256(pubkey)):
   0x2c7536E3605D9C16a7a3D7b1898e529396a65c23
 ```
 

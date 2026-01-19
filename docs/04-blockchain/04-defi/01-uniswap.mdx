@@ -1,0 +1,711 @@
+---
+title: Uniswap
+description: "From Constant Product Formula to Concentrated Liquidity - core principles and code analysis of Uniswap"
+keywords: [Uniswap, AMM, DEX, DeFi, "Constant Product", "Concentrated Liquidity", LP, Ethereum]
+tags: [DeFi, Ethereum, Solidity, Uniswap]
+sidebar_position: 1
+---
+
+# Uniswap
+
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+## AMM이란 무엇인가
+
+전통적인 거래소는 **오더북(Order Book)** 방식으로 동작한다. 매수자와 매도자가 각각 원하는 가격과 수량을 제시하고, 가격이 일치하면 거래가 체결된다. 이 방식은 높은 유동성과 정밀한 가격 발견이 가능하지만, 중앙화된 매칭 엔진이 필요하고 충분한 거래량이 없으면 스프레드가 벌어진다.
+
+블록체인에서 오더북 방식을 구현하면 몇 가지 문제가 발생한다.
+
+- **가스 비용**: 주문 생성, 수정, 취소마다 트랜잭션 비용이 발생한다.
+- **속도**: 블록 생성 시간(이더리움 기준 12초) 동안 가격이 변동하면 불리한 체결이 일어날 수 있다.
+- **유동성 파편화**: 모든 가격대에 주문이 분산되어 있어야 원활한 거래가 가능하다.
+
+**AMM(Automated Market Maker)**은 이러한 문제를 수학 공식으로 해결한다. 오더북 대신 **유동성 풀(Liquidity Pool)**이라는 토큰 저장소를 두고, 수학 공식에 따라 자동으로 가격을 결정한다. 거래 상대방이 사람이 아니라 스마트 컨트랙트이므로, 언제든 즉시 거래가 가능하다.
+
+| 특성 | 오더북 | AMM |
+|------|--------|-----|
+| 가격 결정 | 매수/매도 주문 매칭 | 수학 공식 |
+| 유동성 제공 | 마켓 메이커 | 누구나 (LP) |
+| 거래 상대방 | 다른 트레이더 | 스마트 컨트랙트 |
+| 항상 거래 가능 | 유동성에 의존 | 풀에 토큰이 있으면 가능 |
+
+Uniswap은 2018년 V1 출시 이후 AMM의 표준을 정립했고, V2(2020)와 V3(2021)를 거치며 DeFi 생태계의 핵심 인프라로 자리잡았다.
+
+## Uniswap V2: Constant Product Formula
+
+### x * y = k의 의미
+
+V2의 핵심은 **Constant Product Formula**다. 두 토큰 X와 Y의 리저브(reserve)를 각각 x, y라 하면, 이 둘의 곱 k는 항상 일정하게 유지된다.
+
+```
+x * y = k
+```
+
+예를 들어 ETH/USDC 풀에 10 ETH와 20,000 USDC가 있다면
+
+```
+k = 10 * 20,000 = 200,000
+```
+
+누군가 1 ETH를 넣고 USDC를 받으려 한다. 스왑 후에도 k는 200,000으로 유지되어야 하므로
+
+```
+(10 + 1) * y' = 200,000
+y' = 200,000 / 11 ≈ 18,181.8 USDC
+```
+
+받을 수 있는 USDC = 20,000 - 18,181.8 = 1,818.2 USDC
+
+단순히 20,000 / 10 = 2,000 USDC가 아닌 이유는 **슬리피지(Slippage)** 때문이다. 스왑이 풀의 비율을 바꾸기 때문에, 거래 규모가 클수록 불리한 가격을 받게 된다. 이것이 AMM의 본질적인 특성이다.
+
+### 가격 결정
+
+현재 가격은 두 리저브의 비율이다.
+
+```
+ETH 가격 (USDC 기준) = reserveUSDC / reserveETH = 20,000 / 10 = 2,000 USDC
+```
+
+스왑이 일어나면 리저브 비율이 바뀌고, 따라서 가격도 바뀐다. 1 ETH를 넣은 후
+
+```
+새 가격 = 18,181.8 / 11 ≈ 1,653 USDC
+```
+
+가격이 2,000에서 1,653으로 떨어졌다. 이처럼 AMM에서 거래 자체가 가격을 움직인다.
+
+### 수수료 구조
+
+V2는 모든 스왑에 **0.3% 수수료**를 부과한다. 이 수수료는 LP(Liquidity Provider)에게 돌아간다.
+
+실제 공식에서는 입력 금액의 0.3%를 제외하고 계산한다.
+
+```
+amountInWithFee = amountIn * 997 / 1000  // 0.3% 수수료 제외
+```
+
+### 코드 분석: getAmountOut
+
+V2의 스왑 출력량을 계산하는 핵심 함수를 살펴보자.
+
+```solidity title="UniswapV2Library.sol"
+// 입력 금액과 리저브가 주어지면, 출력 금액을 계산한다
+function getAmountOut(
+    uint amountIn,      // 입력할 토큰 양
+    uint reserveIn,     // 입력 토큰의 리저브
+    uint reserveOut     // 출력 토큰의 리저브
+) internal pure returns (uint amountOut) {
+    require(amountIn > 0, 'UniswapV2Library: INSUFFICIENT_INPUT_AMOUNT');
+    require(reserveIn > 0 && reserveOut > 0, 'UniswapV2Library: INSUFFICIENT_LIQUIDITY');
+
+    // 1) 0.3% 수수료를 제외한 입력량 계산
+    // amountIn * 0.997 = amountIn * 997 / 1000
+    uint amountInWithFee = amountIn.mul(997);
+
+    // 2) 분자: 수수료 제외 입력량 * 출력 리저브
+    uint numerator = amountInWithFee.mul(reserveOut);
+
+    // 3) 분모: 입력 리저브 * 1000 + 수수료 제외 입력량
+    uint denominator = reserveIn.mul(1000).add(amountInWithFee);
+
+    // 4) 최종 출력량 = 분자 / 분모
+    amountOut = numerator / denominator;
+}
+```
+
+**공식 유도 과정**
+
+Constant Product를 유지하면서 수수료를 적용해야 한다.
+
+```
+스왑 전: reserveIn * reserveOut = k
+스왑 후: (reserveIn + amountIn * 0.997) * (reserveOut - amountOut) = k
+
+정리하면:
+amountOut = (amountIn * 0.997 * reserveOut) / (reserveIn + amountIn * 0.997)
+          = (amountIn * 997 * reserveOut) / (reserveIn * 1000 + amountIn * 997)
+```
+
+### 코드 분석: swap 함수
+
+실제 스왑을 실행하는 Pair 컨트랙트의 `swap` 함수를 분석해보자.
+
+```solidity title="UniswapV2Pair.sol"
+function swap(
+    uint amount0Out,    // 받을 token0 양
+    uint amount1Out,    // 받을 token1 양
+    address to,         // 받을 주소
+    bytes calldata data // flash swap용 콜백 데이터
+) external lock {
+    // 1) 출력량 검증: 둘 중 하나는 0보다 커야 함
+    require(amount0Out > 0 || amount1Out > 0, 'UniswapV2: INSUFFICIENT_OUTPUT_AMOUNT');
+
+    // 2) 현재 리저브 조회
+    (uint112 _reserve0, uint112 _reserve1,) = getReserves();
+
+    // 3) 출력량이 리저브보다 작아야 함 (풀에 있는 것보다 많이 빼갈 수 없음)
+    require(amount0Out < _reserve0 && amount1Out < _reserve1, 'UniswapV2: INSUFFICIENT_LIQUIDITY');
+
+    uint balance0;
+    uint balance1;
+    {
+        address _token0 = token0;
+        address _token1 = token1;
+        require(to != _token0 && to != _token1, 'UniswapV2: INVALID_TO');
+
+        // 4) 토큰 전송 (먼저 보내고 나중에 검증 - Optimistic Transfer)
+        if (amount0Out > 0) _safeTransfer(_token0, to, amount0Out);
+        if (amount1Out > 0) _safeTransfer(_token1, to, amount1Out);
+
+        // 5) Flash Swap 콜백 (data가 있으면 호출)
+        if (data.length > 0) IUniswapV2Callee(to).uniswapV2Call(msg.sender, amount0Out, amount1Out, data);
+
+        // 6) 전송 후 잔액 확인
+        balance0 = IERC20(_token0).balanceOf(address(this));
+        balance1 = IERC20(_token1).balanceOf(address(this));
+    }
+
+    // 7) 입력량 계산 (잔액 증가분)
+    uint amount0In = balance0 > _reserve0 - amount0Out ? balance0 - (_reserve0 - amount0Out) : 0;
+    uint amount1In = balance1 > _reserve1 - amount1Out ? balance1 - (_reserve1 - amount1Out) : 0;
+    require(amount0In > 0 || amount1In > 0, 'UniswapV2: INSUFFICIENT_INPUT_AMOUNT');
+
+    {
+        // 8) K 값 검증 (수수료 적용 후에도 k가 유지되어야 함)
+        // balance * 1000 - amountIn * 3 = 수수료(0.3%) 제외한 effective balance
+        uint balance0Adjusted = balance0.mul(1000).sub(amount0In.mul(3));
+        uint balance1Adjusted = balance1.mul(1000).sub(amount1In.mul(3));
+
+        // 조정된 잔액의 곱이 기존 k * 1000^2 이상이어야 함
+        require(
+            balance0Adjusted.mul(balance1Adjusted) >= uint(_reserve0).mul(_reserve1).mul(1000**2),
+            'UniswapV2: K'
+        );
+    }
+
+    // 9) 리저브 업데이트
+    _update(balance0, balance1, _reserve0, _reserve1);
+    emit Swap(msg.sender, amount0In, amount1In, amount0Out, amount1Out, to);
+}
+```
+
+위 코드의 실행 흐름을 보면, 일반적인 "입금 → 검증 → 출금" 순서와 다르다는 것을 알 수 있다. Uniswap V2는 **"출금 → 콜백 → 검증"** 순서로 동작한다. 이 설계가 가능한 이유와 그로 인해 얻는 이점을 살펴보자.
+
+#### Optimistic Transfer 패턴
+
+4번 단계에서 요청한 토큰을 **먼저 전송**한다. 아직 사용자가 입력 토큰을 보냈는지 확인하지 않은 상태다. 이것이 가능한 이유는 8번 단계의 K 검증 때문이다. 트랜잭션이 끝날 때 K 값이 유지(또는 증가)되지 않으면 전체 트랜잭션이 revert된다. 이더리움의 atomic transaction 특성상, 중간에 토큰을 받아갔더라도 최종 검증에 실패하면 모든 상태 변경이 취소된다.
+
+이 패턴 덕분에 **Flash Swap**이 가능해진다. 5번 단계의 콜백에서 사용자는 방금 받은 토큰으로 다른 작업(차익거래, 담보 청산 등)을 수행하고, 그 수익으로 입력 토큰을 갚을 수 있다. 무담보로 자산을 빌려 사용하고 같은 트랜잭션 내에서 갚는 Flash Loan의 변형이다.
+
+#### K 검증과 수수료
+
+8번 단계의 K 검증은 단순히 `x * y >= k`가 아니라 수수료를 고려한 조정된 값을 사용한다.
+
+```
+balance0Adjusted = balance0 * 1000 - amount0In * 3
+balance1Adjusted = balance1 * 1000 - amount1In * 3
+```
+
+입력량의 0.3%(3/1000)를 제외한 "effective balance"를 계산하여, 수수료를 제외한 실질 잔액의 곱이 기존 K 값 이상인지 확인한다. 수수료는 풀에 남아 K 값을 증가시키고, 이는 LP들의 수익이 된다.
+
+#### 입력량 역산
+
+7번 단계에서 입력량을 직접 파라미터로 받지 않고 잔액 변화로 계산한다. `swap` 함수 호출 전에 토큰을 전송해두면, 함수 내에서 리저브 대비 증가한 잔액을 입력량으로 인식한다.
+
+**장점**
+- Router 없이 Pair 컨트랙트를 직접 호출할 수 있다.
+- 여러 스왑을 하나의 트랜잭션으로 체이닝할 수 있다.
+- 토큰 전송 방식에 유연성을 제공한다. (transfer, transferFrom, 또는 다른 컨트랙트에서 전송)
+
+### LP 토큰: 유동성 지분 증명
+
+유동성을 공급하면 LP(Liquidity Provider) 토큰을 받는다. LP 토큰은 풀에 대한 **비례적 지분**을 나타내는 ERC-20 토큰이다. 주식회사의 주식과 비슷하게, LP 토큰을 보유한다는 것은 해당 풀의 자산에 대한 청구권을 갖는다는 의미다.
+
+핵심은 LP 토큰이 **절대적인 토큰 양이 아니라 비율**을 나타낸다는 점이다. 내가 전체 LP 토큰의 10%를 보유하고 있다면, 출금 시점의 풀 자산 10%를 받는다. 풀에서 스왑이 발생할 때마다 0.3% 수수료가 풀에 누적되므로, 시간이 지나면 같은 LP 토큰으로 더 많은 자산을 인출할 수 있다.
+
+#### 유동성 공급 (mint)
+
+```solidity title="UniswapV2Pair.sol"
+function mint(address to) external lock returns (uint liquidity) {
+    (uint112 _reserve0, uint112 _reserve1,) = getReserves();
+
+    // 새로 들어온 토큰 양 계산 (현재 잔액 - 기록된 리저브)
+    uint balance0 = IERC20(token0).balanceOf(address(this));
+    uint balance1 = IERC20(token1).balanceOf(address(this));
+    uint amount0 = balance0.sub(_reserve0);
+    uint amount1 = balance1.sub(_reserve1);
+
+    uint _totalSupply = totalSupply;
+    if (_totalSupply == 0) {
+        // 최초 유동성 공급
+        liquidity = Math.sqrt(amount0.mul(amount1)).sub(MINIMUM_LIQUIDITY);
+        _mint(address(0), MINIMUM_LIQUIDITY); // 1000 LP 영구 잠금
+    } else {
+        // 기존 풀에 추가: 더 작은 비율 기준으로 발행
+        liquidity = Math.min(
+            amount0.mul(_totalSupply) / _reserve0,
+            amount1.mul(_totalSupply) / _reserve1
+        );
+    }
+    require(liquidity > 0, 'UniswapV2: INSUFFICIENT_LIQUIDITY_MINTED');
+    _mint(to, liquidity);
+
+    _update(balance0, balance1, _reserve0, _reserve1);
+}
+```
+
+**최초 유동성 - sqrt 공식의 이유**: 첫 LP에게는 `sqrt(amount0 * amount1)` 만큼의 LP 토큰이 발행된다. 왜 곱의 제곱근일까?
+1. **단위 독립성**: ETH(18 decimals)와 USDC(6 decimals)처럼 단위가 다른 토큰 페어에서도 공정하게 동작한다. 단순 합이나 곱을 사용하면 decimal이 큰 토큰에 편향된다.
+2. **기하평균의 특성**: `sqrt(x * y)`는 두 값의 기하평균이다. x가 2배가 되고 y가 절반이 되면 기하평균은 변하지 않아, 가격 변동에 중립적인 지표가 된다.
+3. **K 값과의 관계**: `L = sqrt(K)`로, 유동성 L의 제곱이 상수 K가 된다. 이 관계는 V3에서 더 명확해진다.
+
+**추가 유동성**: 이미 풀이 존재하면 현재 비율에 맞춰 LP 토큰이 발행된다. `Math.min`을 사용하는 이유는 비율이 맞지 않게 공급할 경우 초과분을 보호하지 않기 위함이다. 예를 들어 1:1 풀에 2:1 비율로 공급하면, 1:1에 해당하는 LP만 받고 나머지 토큰은 풀에 기부된다. Router 컨트랙트가 이런 실수를 방지해준다.
+
+**MINIMUM_LIQUIDITY**: 최초 1000 LP 토큰(10^-15 수준)은 address(0)에 영구히 잠긴다. 이는 두 가지 문제를 방지한다.
+
+1. **0 나누기 방지**: totalSupply가 0이 되면 추가 유동성 공급 시 나눗셈 에러가 발생한다.
+2. **Inflation Attack 방지**: 공격자가 최초 LP가 되어 1 wei만 공급하고, 이후 대량의 토큰을 직접 전송하면 LP 토큰 1개의 가치가 극도로 높아진다. 이후 피해자가 유동성을 공급하면 반올림 오차로 LP 토큰을 0개 받게 되어 자금을 잃는다. MINIMUM_LIQUIDITY가 있으면 이 공격의 비용이 높아진다.
+
+#### 유동성 인출 (burn)
+
+```solidity title="UniswapV2Pair.sol"
+function burn(address to) external lock returns (uint amount0, uint amount1) {
+    (uint112 _reserve0, uint112 _reserve1,) = getReserves();
+    address _token0 = token0;
+    address _token1 = token1;
+    uint balance0 = IERC20(_token0).balanceOf(address(this));
+    uint balance1 = IERC20(_token1).balanceOf(address(this));
+    uint liquidity = balanceOf[address(this)]; // 컨트랙트로 전송된 LP 토큰
+
+    uint _totalSupply = totalSupply;
+    // LP 토큰 비율만큼 각 토큰을 인출
+    amount0 = liquidity.mul(balance0) / _totalSupply;
+    amount1 = liquidity.mul(balance1) / _totalSupply;
+    require(amount0 > 0 && amount1 > 0, 'UniswapV2: INSUFFICIENT_LIQUIDITY_BURNED');
+
+    _burn(address(this), liquidity);
+    _safeTransfer(_token0, to, amount0);
+    _safeTransfer(_token1, to, amount1);
+
+    _update(...);
+}
+```
+
+인출 시에는 보유한 LP 토큰 비율만큼 풀의 자산을 가져간다. 공급 이후 발생한 수수료가 풀에 누적되어 있으므로, 일반적으로 공급했던 것보다 더 많은 토큰을 인출하게 된다.
+
+#### 수수료는 어떻게 LP에게 돌아가는가
+
+Uniswap V2는 별도의 수수료 분배 로직이 없다. 대신 수수료가 발생하면 K 값 자체가 증가한다.
+
+- 스왑 전: K = 1,000,000
+- 스왑 후 (0.3% 수수료 포함): K = 1,003,000
+
+K가 커지면 같은 LP 토큰 비율로 더 많은 토큰을 인출할 수 있다. 별도의 claim 함수 없이 인출 시 자동으로 수수료가 포함된다.
+
+## V2의 한계: 자본 비효율성
+
+V2는 단순하고 검증된 설계지만, DeFi가 성장하면서 그 한계가 명확해졌다. 핵심 문제는 **자본 비효율성**이다. LP가 공급한 자본 대부분이 실제 거래에 사용되지 않는다.
+
+### 전 범위 유동성의 문제
+
+`x * y = k` 공식에서 유동성은 가격 0부터 무한대까지 **균일하게 분포**된다. 수학적으로 이 곡선은 점근선을 가지므로 x가 0이나 무한대에 가까워져도 곡선은 축에 닿지 않는다. 즉, 모든 가격대에 유동성이 존재한다.
+
+문제는 대부분의 거래가 **현재 가격 근처의 좁은 범위**에서 일어난다는 것이다.
+
+```
+V2 유동성 분포 (ETH/USDC 예시)
+
+Price    $100        $2,000        $100,000
+          |            |              |
+Liq.     ████████████████████████████████  <- Uniformly distributed
+          |            |              |
+Trading             [##]                   <- Most trades here
+                 $1,800~$2,200
+```
+
+ETH가 $2,000일 때, $100이나 $100,000 가격대에 배치된 유동성은 거래에 전혀 기여하지 못한다. 그 자본은 그냥 잠들어 있는 것이다.
+
+**구체적인 수치로 보면**:
+- ETH/USDC 풀에 $1,000,000의 유동성이 있다고 가정
+- 일일 거래의 95%가 현재 가격 ±10% 범위에서 발생
+- 그 범위에 실제로 활용되는 유동성은 전체의 약 0.5~2% 수준
+- 나머지 98%의 자본은 극단적 가격 변동에 대비해 묶여 있을 뿐
+
+스테이블코인 페어의 사례: DAI/USDC 같은 스테이블코인 페어는 0.99~1.01 범위를 거의 벗어나지 않는다. 하지만 V2에서는 0~무한대 전체에 유동성이 분산되어, 전체 자본의 0.5%만 실제 거래에 사용된다. 99.5%의 자본이 사실상 낭비되는 셈이다.
+
+이 비효율성은 LP의 수익률을 직접적으로 낮춘다. 수수료는 실제 거래에 사용된 유동성에서만 발생하는데, 자본의 극히 일부만 거래에 참여하니 전체 자본 대비 수익률(APR)이 낮아질 수밖에 없다.
+
+### 비영구적 손실 (Impermanent Loss)
+
+LP가 직면하는 또 다른 문제는 **비영구적 손실(Impermanent Loss, IL)**이다. 가격이 변동하면, LP는 토큰을 그냥 들고 있었을 때보다 손해를 보게 된다.
+
+AMM의 특성상 가격이 오르는 토큰은 팔리고, 내리는 토큰은 사들이게 된다. 차익거래자들이 외부 시장과 가격을 맞추는 과정에서 풀의 토큰 비율이 조정된다. 결과적으로 LP는 "오르는 자산은 일찍 팔고, 내리는 자산은 계속 산" 셈이 된다.
+
+#### 수치 예시
+
+ETH 가격이 $2,000 → $4,000로 2배가 된 경우를 계산해보자.
+
+**초기 상태**
+- LP가 5 ETH + 10,000 USDC를 공급 (총 $20,000)
+- `k = 5 * 10,000 = 50,000`
+
+**가격 변동 후 풀 상태**
+- 새 가격 p = 4,000에서 `x * y = k`와 `y/x = p`를 만족해야 함
+- `x = sqrt(k/p) = sqrt(50,000/4,000) ≈ 3.54 ETH`
+- `y = sqrt(k*p) = sqrt(50,000*4,000) ≈ 14,142 USDC`
+
+
+| 전략 | 보유 자산 | 가치 |
+|------|----------|------|
+| 단순 보유 | 5 ETH + 10,000 USDC | $30,000 |
+| V2 LP | 3.54 ETH + 14,142 USDC | $28,284 |
+
+**손실**: $1,716 (약 5.72%)
+
+ETH가 올랐는데 LP는 ETH를 1.46개나 덜 갖게 됐다. 차익거래자들이 싼 ETH를 사가면서 풀에서 빠져나갔기 때문이다.
+
+가격 변동이 클수록 비영구적 손실도 커진다. 변동성이 큰 토큰 페어의 LP는 수수료 수익이 손실을 상쇄하고도 남아야 수익을 낼 수 있다. "비영구적"이라 부르는 이유는 가격이 원래대로 돌아오면 손실이 사라지기 때문이다. 하지만 현실에서 가격이 정확히 원점으로 돌아오는 경우는 드물다.
+
+## Uniswap V3: Concentrated Liquidity
+
+### 핵심 아이디어
+
+V3의 혁신은 **Concentrated Liquidity**다. LP가 원하는 가격 범위에만 유동성을 집중할 수 있다.
+
+```
+V2: Full Range Distribution
+|================================================|
+0                     Price                      ∞
+[          Liquidity spread across all prices    ]
+
+V3: Concentrated in Selected Range
+                    |==========|
+                  $1,800     $2,200
+                  [Deep liquidity here]
+```
+
+V2에서 $10,000를 공급하면 전 가격대에 얇게 분산된다. V3에서는 같은 $10,000를 $1,800~$2,200 범위에만 집중할 수 있어, 해당 범위 내에서 훨씬 깊은 유동성을 제공한다.
+
+### 수학적 기반: Virtual Liquidity
+
+V3의 concentrated liquidity를 이해하려면 **가상 유동성(Virtual Liquidity)** 개념이 필요하다.
+
+V2의 `x * y = k`를 다시 보자. 이 공식에서 유동성 L은 `L = sqrt(k) = sqrt(x * y)`로 정의된다.
+
+V2에서는 전체 가격 범위(0~∞)에 L이 균일하게 분포한다. 가격 P에서 토큰 양과의 관계는 다음과 같다.
+
+```
+x = L / sqrt(P)
+y = L * sqrt(P)
+```
+
+V3의 핵심 통찰은 **특정 가격 범위 [Pa, Pb]에서만 동작하는 "가상의" x, y를 사용하면, 더 적은 실제 자본으로 같은 유동성 L을 제공할 수 있다**는 것이다.
+
+#### Real vs Virtual Reserves
+
+V3에서 LP가 범위 [Pa, Pb]에 유동성 L을 공급할 때 필요한 토큰 양은 다음과 같다.
+
+```
+Virtual reserves (V2처럼 동작):
+x_virtual = L / sqrt(P)
+y_virtual = L * sqrt(P)
+
+Real reserves (실제 필요한 토큰):
+x_real = L * (1/sqrt(P) - 1/sqrt(Pb))   # 가격이 Pb에 도달하면 x가 0이 됨
+y_real = L * (sqrt(P) - sqrt(Pa))        # 가격이 Pa에 도달하면 y가 0이 됨
+```
+
+범위가 좁을수록 실제 필요한 토큰(x_real, y_real)이 줄어들지만, 가상 리저브(x_virtual, y_virtual)는 같은 L을 유지한다. 스왑 시에는 가상 리저브 기준으로 가격이 결정되므로, 적은 자본으로 깊은 유동성 효과를 낸다.
+
+#### 범위 이탈 시 동작
+
+가격이 범위를 벗어나면 포지션은 단일 토큰으로 변환된다.
+
+- 가격 < Pa (범위 하단 이탈): y_real = 0, 전부 토큰 X로 변환
+- 가격 > Pb (범위 상단 이탈): x_real = 0, 전부 토큰 Y로 변환
+
+범위를 벗어난 포지션은 거래에 참여하지 않으므로 수수료도 발생하지 않는다. 가격이 다시 범위 안으로 들어오면 거래에 참여하기 시작한다.
+
+### Tick 시스템
+
+V3는 연속적인 가격 대신 **Tick**이라는 이산적 가격 포인트를 사용한다.
+
+```
+Tick: ..., -2, -1, 0, 1, 2, ...
+
+각 Tick은 특정 가격에 대응:
+price(i) = 1.0001^i
+
+Tick 0  → 가격 1.0
+Tick 1  → 가격 1.0001
+Tick 100 → 가격 1.0100
+Tick -100 → 가격 0.9900
+```
+
+LP는 두 Tick을 선택하여 유동성 범위를 지정한다. 예를 들어 Tick -100 ~ +100은 가격 0.99 ~ 1.01 범위를 의미한다.
+
+#### Tick Spacing
+
+모든 Tick에서 유동성을 설정할 수 있다면, 각 Tick마다 상태를 업데이트해야 해서 가스 비용이 폭증한다. V3는 **Tick Spacing**을 도입해 사용 가능한 Tick을 제한한다.
+
+| 수수료 | Tick Spacing | 범위당 Tick 수 | 설계 의도 |
+|--------|-------------|---------------|----------|
+| 0.01% | 1 | 모든 Tick | 최고 정밀도, 스테이블코인 전용 |
+| 0.05% | 10 | 1/10 | 스테이블코인 (정밀한 범위 필요) |
+| 0.30% | 60 | 1/60 | 일반 페어 (가스/정밀도 균형) |
+| 1.00% | 200 | 1/200 | 변동성 높은 페어 (넓은 범위) |
+
+Tick Spacing이 60이면 ..., -120, -60, 0, 60, 120, ... 이런 Tick만 범위 경계로 사용 가능하다. 낮은 수수료 풀은 좁은 범위에서 정교한 LP 전략이 필요하므로 세밀한 Tick을, 높은 수수료 풀은 어차피 넓은 범위를 쓰므로 거친 Tick을 제공한다.
+
+#### Initialized Tick
+
+모든 Tick에 데이터를 저장하면 메모리 낭비다. V3는 **유동성 변화가 있는 Tick만 초기화**한다. 이를 Initialized Tick이라 한다.
+
+```
+예: 어떤 LP가 Tick 100~200 범위에 유동성 공급
+
+Tick 100: liquidityNet = +1000 (이 Tick을 지나갈 때 유동성 +1000)
+Tick 200: liquidityNet = -1000 (이 Tick을 지나갈 때 유동성 -1000)
+
+중간의 Tick 101~199는 초기화하지 않음
+```
+
+스왑이 Tick을 지나갈 때 해당 Tick의 `liquidityNet`을 현재 유동성에 더하거나 빼면서 유동성을 추적한다.
+
+### sqrtPriceX96
+
+V3는 가격을 직접 저장하지 않고 **sqrtPriceX96**을 저장한다.
+
+```
+sqrtPriceX96 = sqrt(price) * 2^96
+```
+
+#### 왜 제곱근인가?
+
+유동성 계산 공식을 다시 보자.
+
+```
+x = L / sqrt(P)
+y = L * sqrt(P)
+```
+
+토큰 양을 계산할 때 항상 `sqrt(P)`가 필요하다. 가격 P를 저장하면 매번 제곱근 연산(가스 비쌈)을 해야 한다. `sqrt(P)`를 저장하면 바로 사용할 수 있다.
+
+또한 스왑 시 가격 변화량 계산에서도 제곱근 형태가 더 편리하다.
+
+```
+deltaX = L * (1/sqrt(P_new) - 1/sqrt(P_old))
+deltaY = L * (sqrt(P_new) - sqrt(P_old))
+```
+
+#### 왜 2^96인가?
+
+Solidity는 부동소수점을 지원하지 않으므로 **고정소수점(Fixed-Point)** 표기를 사용한다. 2^96을 곱해 정수로 표현하면 충분한 정밀도를 확보하면서 uint160 범위 내에서 연산할 수 있다.
+
+### V3 스왑 메커니즘
+
+V3 스왑은 V2보다 복잡하다. 가격 범위를 넘나들며 여러 포지션의 유동성을 순차적으로 소비하기 때문이다.
+
+#### 스왑 흐름
+
+```
+스왑 요청: 1 ETH → USDC
+
+1. 현재 가격(Tick)에서 시작
+2. 현재 활성 유동성(L)으로 스왑 가능한 만큼 스왑
+3. 가격이 다음 초기화된 Tick에 도달하면:
+   - 해당 Tick의 liquidityNet을 현재 L에 적용
+   - 새로운 L로 스왑 계속
+4. 입력 토큰이 소진될 때까지 반복
+```
+
+예를 들어 ETH를 USDC로 스왑하면 가격이 하락한다(ETH 공급 증가, USDC 수요 증가). 가격이 하락하며 여러 LP 포지션의 범위를 지나갈 수 있다.
+
+#### liquidity 변수의 의미
+
+Pool의 `liquidity` 상태 변수는 **현재 가격이 속한 범위에 걸친 모든 포지션의 유동성 합**이다.
+
+```solidity
+// 현재 Tick = 100이고, 아래 포지션들이 있다면:
+// 포지션 A: Tick 50~150, L = 1000
+// 포지션 B: Tick 80~120, L = 2000
+// 포지션 C: Tick 200~300, L = 500 (현재 범위 밖)
+
+// liquidity = 1000 + 2000 = 3000
+// (포지션 C는 현재 가격이 범위 밖이므로 제외)
+```
+
+스왑이 Tick을 지나갈 때마다 `liquidity`가 업데이트된다. 이 값이 클수록 해당 가격대의 슬리피지가 작아진다.
+
+#### 단일 Tick 내 스왑 계산
+
+가격이 하나의 Tick 범위 내에서만 움직이는 경우, V2와 유사하게 계산된다.
+
+```
+X를 Y로 스왑할 때 (가격 하락 방향):
+deltaY = L * (sqrt(P_old) - sqrt(P_new))
+
+Y를 X로 스왑할 때 (가격 상승 방향):
+deltaX = L * (1/sqrt(P_new) - 1/sqrt(P_old))
+```
+
+`L`이 클수록 같은 가격 변화에 더 많은 토큰을 교환할 수 있다. 이것이 concentrated liquidity의 핵심이다. 좁은 범위에 L을 집중하면 해당 범위에서 깊은 유동성(낮은 슬리피지)을 제공한다.
+
+### 다중 수수료 티어
+
+V2는 0.3% 고정이었지만, V3는 세 가지 수수료 티어를 제공한다.
+
+| 티어 | 적합한 페어 | 이유 |
+|------|------------|------|
+| 0.05% | USDC/DAI | 가격 변동 거의 없음, 낮은 IL |
+| 0.30% | ETH/USDC | 일반적인 변동성 |
+| 1.00% | SHIB/ETH | 높은 변동성, 높은 IL 보상 필요 |
+
+### NFT 기반 포지션
+
+V2에서 LP 토큰은 ERC-20이었다. 모든 LP가 동일한 범위(전체)에 유동성을 제공하므로, 대체 가능(fungible)했다.
+
+V3에서 각 LP 포지션은 고유한 범위를 가지므로, **ERC-721 NFT**로 표현된다.
+
+- token0, token1 (토큰 쌍)
+- tickLower, tickUpper (가격 범위)
+- liquidity (유동성 양)
+- feeGrowthInside (수수료 누적)
+
+### V3 Pool 구조
+
+V3 Pool의 핵심 상태 변수를 살펴보자.
+
+```solidity title="UniswapV3Pool.sol - 상태 변수"
+// 현재 가격과 틱 정보를 담은 슬롯
+struct Slot0 {
+    uint160 sqrtPriceX96;           // 현재 가격의 제곱근 * 2^96
+    int24 tick;                      // 현재 틱
+    uint16 observationIndex;         // 오라클 관측 인덱스
+    uint16 observationCardinality;   // 오라클 배열 크기
+    uint16 observationCardinalityNext;
+    uint8 feeProtocol;              // 프로토콜 수수료
+    bool unlocked;                   // 재진입 방지
+}
+Slot0 public slot0;
+
+// 현재 활성 유동성 (현재 가격 범위에 걸친 유동성 합계)
+uint128 public liquidity;
+
+// 틱별 정보: 해당 틱을 경계로 하는 포지션들의 유동성 합
+mapping(int24 => Tick.Info) public ticks;
+
+// 포지션별 정보: (owner, tickLower, tickUpper) → 포지션 데이터
+mapping(bytes32 => Position.Info) public positions;
+```
+
+## 테스트
+
+메인넷 포크 환경에서 V2 공식을 검증하고 V2/V3 스왑 결과를 비교해보자.
+
+```mdx-code-block
+<Tabs>
+<TabItem value="v2-formula" label="V2 공식 검증">
+```
+
+```solidity title="UniswapComparison.t.sol"
+function test_V2_GetAmountOutFormula() public view {
+    uint256 amountIn = 1 ether;
+
+    // V2 공식 직접 계산
+    uint256 amountInWithFee = amountIn * 997;
+    uint256 numerator = amountInWithFee * reserveOut;
+    uint256 denominator = reserveIn * 1000 + amountInWithFee;
+    uint256 amountOut = numerator / denominator;
+
+    // Router의 결과와 비교
+    uint256[] memory routerAmounts = v2Router.getAmountsOut(amountIn, path);
+    assertEq(amountOut, routerAmounts[1]);
+}
+```
+
+```mdx-code-block
+</TabItem>
+<TabItem value="swap-comparison" label="V2 vs V3 스왑 비교">
+```
+
+```solidity title="UniswapComparison.t.sol"
+function test_SwapComparison() public {
+    uint256 amountIn = 1 ether;
+    uint256 halfAmount = amountIn / 2;
+
+    // V2 스왑
+    IERC20(WETH).approve(address(v2Router), halfAmount);
+    v2Router.swapExactTokensForTokens(halfAmount, 0, path, address(this), block.timestamp);
+    uint256 v2Output = IERC20(USDC).balanceOf(address(this));
+
+    // V3 스왑
+    IERC20(WETH).approve(address(v3Router), halfAmount);
+    uint256 v3Output = v3Router.exactInputSingle(
+        ISwapRouter.ExactInputSingleParams({
+            tokenIn: WETH,
+            tokenOut: USDC,
+            fee: 3000,
+            recipient: address(this),
+            deadline: block.timestamp,
+            amountIn: halfAmount,
+            amountOutMinimum: 0,
+            sqrtPriceLimitX96: 0
+        })
+    );
+}
+```
+
+```mdx-code-block
+</TabItem>
+</Tabs>
+```
+
+```bash
+npm run test:uniswap
+```
+
+```
+[PASS] test_V2_GetAmountOutFormula()
+  amountIn: 1000000000000000000
+  reserveIn (WETH): 3563038037535649675241
+  reserveOut (USDC): 11441088302021
+
+  amountOut = (amountIn * 997 * reserveOut) / (reserveIn * 1000 + amountIn * 997)
+  Router getAmountsOut: 3200519893
+  Manual calculation:   3200519893
+  Match: true
+
+[PASS] test_SwapComparison()
+  === Swap Comparison: 1 WETH -> USDC ===
+  V2 actual output (0.5 WETH): 1600483805 USDC
+  V3 actual output (0.5 WETH): 1600561197 USDC
+
+  V3 gave 77392 more USDC (0.005% more efficient)
+```
+
+V3가 동일 입력에 더 많은 출력을 주는 이유는 concentrated liquidity 덕분에 현재 가격대의 유동성이 더 깊기 때문이다.
+
+전체 코드는 [crypto-examples/solidity-examples](https://github.com/chihunmanse/crypto-examples/tree/main/solidity-examples/test/foundry)에서 확인할 수 있다.
+
+## 정리
+
+| 항목 | V2 | V3 |
+|------|-----|-----|
+| 유동성 분포 | 0 ~ ∞ 전 범위 균일 | 사용자 지정 범위 집중 |
+| 자본 효율성 | 기준 (1x) | 최대 4000x |
+| LP 토큰 | ERC-20 (대체 가능) | ERC-721 NFT (고유) |
+| 수수료 | 0.3% 고정 | 0.05%, 0.3%, 1% 선택 |
+| LP 관리 | Passive (설정 후 방치) | Active (범위 조정 필요) |
+| 비영구적 손실 | 기본 | 범위 이탈 시 증폭 |
+| 가스 비용 | 상대적 저렴 | 상대적 비쌈 |
+| 복잡도 | 단순 | 복잡 |
+
+### 참고 자료
+
+- [Uniswap V2 Whitepaper](https://app.uniswap.org/whitepaper.pdf)
+- [Uniswap V3 Whitepaper](https://app.uniswap.org/whitepaper-v3.pdf)
+- [Uniswap Docs - How Uniswap Works](https://docs.uniswap.org/contracts/v2/concepts/protocol-overview/how-uniswap-works)
+- [Uniswap Docs - Concentrated Liquidity](https://docs.uniswap.org/concepts/protocol/concentrated-liquidity)
+- [RareSkills - Uniswap V3 Concentrated Liquidity](https://rareskills.io/post/uniswap-v3-concentrated-liquidity)

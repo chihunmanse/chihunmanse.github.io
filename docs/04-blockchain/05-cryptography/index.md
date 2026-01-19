@@ -1,6 +1,6 @@
 ---
 title: Cryptography
-sidebar_position: 3
+sidebar_position: 5
 ---
 
 import DocCardList from '@theme/DocCardList';
