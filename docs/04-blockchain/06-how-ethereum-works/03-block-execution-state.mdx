@@ -1,0 +1,745 @@
+---
+title: 3. Block Execution and State Management
+description: "How Ethereum executes transactions in the EVM, manages world state with Merkle Patricia Trie, and builds blocks"
+keywords: [Ethereum, geth, EVM, block, state, Merkle Patricia Trie, opcode, receipt, state root]
+tags: [Ethereum, EVM]
+sidebar_position: 3
+---
+
+# 3. Block Execution and State Management
+
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+[이전 글](./02-transaction-lifecycle.mdx)에서 트랜잭션이 생성되어 mempool에 도착하기까지의 과정을 살펴보았다. 이 글에서는 mempool의 트랜잭션이 블록에 포함되고, EVM에서 실행되어 이더리움의 상태(World State)가 어떻게 변경되는지 분석한다.
+
+## 트랜잭션 실행의 전체 흐름
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                     Transaction Execution Overview                      │
+└─────────────────────────────────────────────────────────────────────────┘
+
+  Mempool                    Block Builder                    EVM
+┌──────────┐               ┌──────────────┐               ┌──────────┐
+│ pending  │  ──select──►  │   assemble   │  ──execute──► │  run tx  │
+│   txs    │               │    block     │               │   code   │
+└──────────┘               └──────────────┘               └────┬─────┘
+                                                               │
+                                ┌──────────────────────────────┘
+                                ▼
+                          ┌──────────┐     ┌──────────────────┐
+                          │  update  │────►│  new stateRoot   │
+                          │  state   │     │  in block header │
+                          └──────────┘     └──────────────────┘
+```
+
+mempool에 있는 트랜잭션은 블록 빌더에 의해 선택되어 블록에 포함된다. 각 트랜잭션은 EVM에서 실행되고, 실행 결과로 이더리움의 상태가 변경된다. 변경된 상태의 루트 해시(stateRoot)가 블록 헤더에 포함되어 모든 노드가 동일한 상태에 합의하게 된다.
+
+## 블록 구조
+
+블록은 헤더(Header)와 바디(Body)로 구성된다. 헤더에는 블록의 메타데이터와 상태 증명을 위한 루트 해시들이, 바디에는 실제 트랜잭션 목록이 포함된다.
+
+### Block Header
+
+| Field              | Description                                       |
+|--------------------|---------------------------------------------------|
+| parentHash         | 이전 블록 헤더의 keccak256 해시                    |
+| ommersHash         | 엉클 블록 목록의 해시 (PoS 이후 빈 값)             |
+| beneficiary        | 수수료를 받을 주소 (fee recipient)                |
+| stateRoot          | 실행 후 World State Trie의 루트 해시              |
+| transactionsRoot   | 트랜잭션 목록의 MPT 루트 해시                      |
+| receiptsRoot       | Receipt 목록의 MPT 루트 해시                       |
+| logsBloom          | 로그 검색용 bloom filter (256 bytes)              |
+| difficulty         | 채굴 난이도 (PoS 이후 0)                           |
+| number             | 블록 번호                                          |
+| gasLimit           | 블록당 최대 가스 한도                              |
+| gasUsed            | 블록 내 트랜잭션들이 사용한 총 가스                |
+| timestamp          | 블록 생성 시간 (Unix timestamp)                   |
+| extraData          | 임의 데이터 (최대 32 bytes)                        |
+| mixHash/prevRandao | PoW: 채굴 증명 / PoS: RANDAO 값                    |
+| nonce              | PoW: 채굴 nonce / PoS: 0                           |
+| baseFeePerGas      | EIP-1559 base fee                                  |
+| withdrawalsRoot    | Validator 출금 목록의 루트 (Shanghai 이후)         |
+| blobGasUsed        | Blob이 사용한 가스 (Dencun 이후)                   |
+| excessBlobGas      | 초과 blob 가스 (blob base fee 계산용)              |
+| parentBeaconRoot   | 부모 비콘 블록 루트 (Dencun 이후)                  |
+
+이 중 가장 중요한 필드는 `stateRoot`이다. 블록의 모든 트랜잭션을 순서대로 실행한 후의 최종 상태를 나타내는 해시이다. 이 값이 일치해야 모든 노드가 같은 상태에 합의했다고 볼 수 있다.
+
+### Block Body
+
+바디에는 트랜잭션 목록과 추가 데이터가 포함된다.
+
+- **transactions:** 블록에 포함된 트랜잭션 배열
+- **withdrawals:** Validator 출금 목록 (Shanghai 이후)
+
+Dencun 이후에는 blob 데이터도 블록과 함께 전파되지만, blob은 블록 바디가 아닌 별도의 사이드카(sidecar)로 관리된다.
+
+### 실제 블록 데이터 조회
+
+```ts title="scripts/ethereum/block-execution.ts"
+const provider = new ethers.JsonRpcProvider("https://eth.llamarpc.com");
+const latestBlock = await provider.getBlock("latest");
+
+console.log("Block Header Fields:");
+console.log(`  number: ${latestBlock.number}`);
+console.log(`  hash: ${latestBlock.hash}`);
+console.log(`  parentHash: ${latestBlock.parentHash}`);
+console.log(`  timestamp: ${latestBlock.timestamp}`);
+
+console.log("Gas Information:");
+console.log(`  gasLimit: ${latestBlock.gasLimit.toLocaleString()}`);
+console.log(`  gasUsed: ${latestBlock.gasUsed.toLocaleString()}`);
+console.log(`  baseFeePerGas: ${ethers.formatUnits(latestBlock.baseFeePerGas, "gwei")} gwei`);
+
+console.log("State Roots:");
+console.log(`  stateRoot: ${latestBlock.stateRoot}`);
+console.log(`  receiptsRoot: ${latestBlock.receiptsRoot}`);
+
+console.log("PoS Fields:");
+console.log(`  miner (fee recipient): ${latestBlock.miner}`);
+console.log(`  prevRandao: ${latestBlock.prevRandao}`);
+```
+
+## 블록 빌딩
+
+### 트랜잭션 선택
+
+블록 빌더는 mempool에서 트랜잭션을 선택하여 블록을 조립한다. 선택 기준은 다음과 같다.
+
+1. **Effective gas price 내림차순:** 높은 수수료를 지불하는 트랜잭션 우선
+2. **같은 계정의 트랜잭션은 nonce 순서 유지:** nonce 3이 먼저 포함되어야 nonce 4가 실행 가능
+3. **가스 한도 내 최대 수익:** 블록 gasLimit(30M) 내에서 수수료 수익 최대화
+
+```
+Block Gas Packing:
+┌────────────────────────────────────────────────────────────┐
+│                    Block (gasLimit: 30M)                   │
+├────────────┬────────────┬────────────┬────────────┬────────┤
+│   Tx 1     │   Tx 2     │   Tx 3     │   Tx 4     │ unused │
+│  (500K)    │  (2.1M)    │  (800K)    │  (1.5M)    │ (25.1M)│
+│ priority:5 │ priority:4 │ priority:3 │ priority:2 │        │
+└────────────┴────────────┴────────────┴────────────┴────────┘
+               ◄──── higher priority first ────►
+```
+
+### MEV-Boost와 PBS
+
+[이전 글](./02-transaction-lifecycle.mdx#mev와-private-transaction)에서 설명했듯이, 현재 대부분의 블록은 MEV-Boost를 통해 외부 블록 빌더가 구성한다. Validator(Proposer)는 직접 블록을 만들지 않고, 빌더들이 제안하는 블록 중 가장 높은 수익을 제공하는 블록을 선택한다.
+
+```
+Block Building Flow:
+  1. Validator에게 슬롯 할당
+  2. CL → EL: engine_forkchoiceUpdatedV3 (블록 빌딩 시작)
+  3. EL: mempool에서 트랜잭션 선택, 블록 조립
+  4. CL → EL: engine_getPayloadV3 (완성된 블록 요청)
+  5. Validator: 블록 서명 후 네트워크 전파
+```
+
+직접 블록을 빌딩하는 경우 위 흐름을 따르지만, MEV-Boost를 사용하면 빌더가 조립한 블록을 릴레이를 통해 받아온다.
+
+## EVM 아키텍처
+
+EVM(Ethereum Virtual Machine)은 이더리움의 트랜잭션을 실행하는 가상 머신이다. 스택 기반의 단순한 구조로 설계되어 결정론적 실행을 보장한다.
+
+### 스택 기반 머신
+
+```
+EVM Architecture:
+┌───────────────────────────────────────────────────────────────────────┐
+│                            EVM Instance                               │
+├───────────────────────────────────────────────────────────────────────┤
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐   │
+│  │    Stack    │  │   Memory    │  │   Storage   │  │   Context   │   │
+│  │ (1024 deep) │  │ (volatile)  │  │ (permanent) │  │ (block, tx) │   │
+│  │   256-bit   │  │ byte array  │  │  key-value  │  │             │   │
+│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘   │
+│                                                                       │
+│  ┌─────────────────────────────────────────────────────────────────┐  │
+│  │                       Program Counter                           │  │
+│  │                  ─► [bytecode execution] ─►                     │  │
+│  └─────────────────────────────────────────────────────────────────┘  │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+- **Stack:** 256비트 워드, 최대 1024개. 모든 연산의 피연산자와 결과가 스택을 통해 전달된다.
+- **Program Counter:** 현재 실행 중인 bytecode 위치를 가리킨다.
+- **Context:** 현재 블록 정보(number, timestamp, baseFee), 트랜잭션 정보(origin, gasprice), 호출 정보(caller, value)를 제공한다.
+
+### EVM Context
+
+EVM 실행 시 접근 가능한 컨텍스트 정보는 다음과 같다.
+
+**Block Context:**
+- `BLOCKHASH`: 최근 256개 블록의 해시
+- `COINBASE`: 블록 fee recipient
+- `TIMESTAMP`: 블록 생성 시간
+- `NUMBER`: 블록 번호
+- `PREVRANDAO`: PoS RANDAO 값
+- `GASLIMIT`: 블록 가스 한도
+- `CHAINID`: 체인 ID
+- `BASEFEE`: EIP-1559 base fee
+
+**Transaction Context:**
+- `ORIGIN`: 트랜잭션 최초 발신자 (EOA)
+- `GASPRICE`: 트랜잭션의 effective gas price
+
+**Call Context:**
+- `CALLER`: 현재 호출자 (msg.sender)
+- `CALLVALUE`: 전송된 ETH (msg.value)
+- `CALLDATALOAD/SIZE/COPY`: 호출 데이터
+
+## 메모리 모델
+
+EVM은 네 가지 데이터 저장 영역을 제공한다. 각 영역은 지속성과 가스 비용이 다르다.
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          EVM Memory Model                               │
+├─────────────┬───────────────┬───────────────────────────────────────────┤
+│   Region    │  Persistence  │                Gas Cost                   │
+├─────────────┼───────────────┼───────────────────────────────────────────┤
+│   Stack     │   Tx only     │  3 gas (PUSH/POP/DUP/SWAP)                │
+│   Memory    │   Tx only     │  3 gas + expansion cost                   │
+│   Storage   │   Permanent   │  100-22100 gas (SLOAD/SSTORE)             │
+│   Calldata  │   Tx only     │  Free to read (CALLDATALOAD)              │
+└─────────────┴───────────────┴───────────────────────────────────────────┘
+```
+
+### Stack
+
+스택은 가장 기본적인 연산 공간이다.
+
+- **크기:** 256비트 워드, 최대 1024개
+- **특성:** LIFO(Last In, First Out), 모든 EVM 연산이 스택을 통해 이루어짐
+- **가스 비용:** PUSH, POP, DUP, SWAP 등 스택 조작은 3 gas
+
+```solidity
+// Solidity 코드
+uint256 result = a + b;
+
+// 컴파일된 bytecode (간략화)
+// PUSH a    (스택: [a])
+// PUSH b    (스택: [a, b])
+// ADD       (스택: [a+b])
+```
+
+### Memory
+
+메모리는 트랜잭션 실행 중 임시 데이터를 저장하는 바이트 배열이다.
+
+- **크기:** 동적 확장 가능, 초기 크기 0
+- **특성:** 바이트 단위 접근, 32바이트 단위로 읽고 씀
+- **가스 비용:** 기본 3 gas + 확장 비용
+
+메모리 확장 비용은 2차 함수로 증가한다.
+
+```
+memory_cost = (memory_size_word² / 512) + (3 × memory_size_word)
+```
+
+이 설계는 무한한 메모리 사용을 방지한다. 작은 메모리는 저렴하지만, 큰 메모리는 급격히 비싸진다.
+
+### Storage
+
+스토리지는 컨트랙트의 영구 저장소이다.
+
+- **구조:** 256비트 키 → 256비트 값 매핑
+- **특성:** 트랜잭션이 끝나도 유지됨
+- **가스 비용:** EVM에서 가장 비쌈
+
+**EIP-2929 이후 가스 비용:**
+
+| 작업 | Cold Access | Warm Access |
+|------|-------------|-------------|
+| SLOAD | 2100 gas | 100 gas |
+| SSTORE (0→non-zero) | 22100 gas | 20000 gas |
+| SSTORE (non-zero→non-zero) | 5000 gas | 2900 gas |
+| SSTORE (non-zero→0) | 5000 gas + 4800 refund | 2900 gas + 4800 refund |
+
+Cold access는 트랜잭션 내에서 해당 슬롯에 처음 접근할 때, warm access는 이미 접근한 슬롯에 다시 접근할 때 적용된다.
+
+```solidity title="contracts/ethereum/StateAccess.sol"
+/**
+ * @notice Demonstrates cold vs warm storage access
+ * @dev First SLOAD is cold (2100 gas), subsequent SLOADs are warm (100 gas)
+ */
+function coldWarmAccess() external view returns (uint256 total) {
+  // First access to value1: COLD (2100 gas)
+  total = value1;
+
+  // Second access to value1: WARM (100 gas)
+  total += value1;
+
+  // First access to value2: COLD (2100 gas)
+  total += value2;
+
+  // Third access to value1: WARM (100 gas)
+  total += value1;
+}
+```
+
+### Calldata
+
+Calldata는 트랜잭션과 함께 전달되는 읽기 전용 입력 데이터이다.
+
+- **특성:** 읽기 전용, 수정 불가
+- **가스 비용:** 읽기 무료, 트랜잭션에 포함 시 4 gas/zero byte, 16 gas/non-zero byte
+
+Solidity에서 external 함수의 파라미터로 `calldata` 키워드를 사용하면 메모리에 복사하지 않고 직접 참조하여 가스를 절약할 수 있다.
+
+## 트랜잭션 실행 흐름
+
+트랜잭션이 EVM에서 실행되는 과정은 StateTransition이라고 부른다. 이 과정을 단계별로 살펴본다.
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                       StateTransition Process                           │
+└─────────────────────────────────────────────────────────────────────────┘
+
+  1. Pre-validation
+     ├─ Check nonce matches account nonce
+     ├─ Verify signature and recover sender
+     └─ Check sender has enough balance for gas + value
+
+  2. Intrinsic Gas Deduction
+     ├─ Base cost: 21000 gas
+     ├─ Calldata: 4 gas/zero byte, 16 gas/non-zero byte
+     ├─ Contract creation: +32000 gas
+     └─ Access list: 2400/address + 1900/storage key
+
+  3. Gas Purchase
+     └─ Deduct maxFee × gasLimit from sender balance
+
+  4. EVM Execution
+     ├─ Contract Creation: deploy bytecode, run constructor
+     └─ Message Call: execute contract code with calldata
+
+  5. State Changes
+     ├─ Apply storage modifications
+     ├─ Update account balances
+     └─ Create/delete accounts
+
+  6. Gas Refund
+     ├─ Refund unused gas: (gasLimit - gasUsed) × effectiveGasPrice
+     └─ Max refund: gasUsed / 5 (post-EIP-3529)
+
+  7. Fee Distribution
+     ├─ baseFee × gasUsed → burned (EIP-1559)
+     └─ priorityFee × gasUsed → block proposer
+```
+
+1. **사전 검증(Pre-validation):** nonce가 계정의 현재 nonce와 일치하는지, 서명이 유효한지, 잔액이 가스비와 전송 금액을 감당할 수 있는지 확인한다.
+2. **Intrinsic Gas 차감:** 트랜잭션 자체의 기본 비용(21000 gas)과 calldata 비용, 컨트랙트 생성 비용 등을 계산한다.
+3. **가스 구매:** 발신자 잔액에서 maxFee × gasLimit만큼을 선차감한다.
+4. **EVM 실행:** 컨트랙트 생성이면 bytecode를 배포하고 constructor를 실행한다. 메시지 호출이면 대상 컨트랙트의 코드를 calldata와 함께 실행한다.
+5. **상태 변경:** 스토리지 수정, 계정 잔액 업데이트, 계정 생성/삭제 등을 적용한다.
+6. **가스 환불:** 사용하지 않은 가스를 발신자에게 돌려준다. 환불 상한은 gasUsed의 1/5이다.
+7. **수수료 분배:** baseFee는 소각되고, priorityFee는 블록 제안자에게 지급된다.
+
+### Intrinsic Gas
+
+모든 트랜잭션은 실행 전에 최소한의 가스(intrinsic gas)를 소모한다.
+
+```
+intrinsicGas = 21000                           // 기본 비용
+             + 4 × (zero bytes in calldata)    // 0x00 바이트
+             + 16 × (non-zero bytes in calldata)
+             + 32000 (if contract creation)    // CREATE
+             + 2400 × (addresses in access list)
+             + 1900 × (storage keys in access list)
+```
+
+단순 ETH 전송은 calldata가 비어있으므로 정확히 21000 gas가 든다.
+
+### Contract Creation vs Message Call
+
+```mdx-code-block
+<Tabs>
+<TabItem value="Contract Creation">
+```
+
+컨트랙트 생성 트랜잭션은 `to` 필드가 비어있다.
+
+```
+1. 새 컨트랙트 주소 계산
+   - CREATE: keccak256(rlp([sender, nonce]))[12:]
+   - CREATE2: keccak256(0xff ++ sender ++ salt ++ keccak256(initCode))[12:]
+
+2. 새 계정 생성 (nonce=1, balance=value)
+
+3. initCode 실행 (constructor)
+
+4. 반환된 bytecode를 code로 저장
+   - 코드 저장 비용: 200 gas × bytecode length
+
+5. 실패 시 모든 상태 롤백 (가스는 소모)
+```
+
+```mdx-code-block
+</TabItem>
+<TabItem value="Message Call">
+```
+
+일반적인 컨트랙트 호출은 `to` 필드에 대상 주소가 있다.
+
+```
+1. 대상 주소의 코드 로드
+
+2. EVM 인스턴스 생성
+   - Stack, Memory 초기화
+   - Context 설정 (caller, value, calldata)
+
+3. Bytecode 실행
+   - Program Counter = 0부터 시작
+   - 각 opcode 실행, 가스 차감
+
+4. 실행 종료
+   - RETURN: 정상 종료, 반환 데이터 전달
+   - REVERT: 상태 롤백, 반환 데이터 전달
+   - STOP: 정상 종료, 반환 데이터 없음
+   - INVALID/out-of-gas: 예외 종료
+```
+
+```mdx-code-block
+</TabItem>
+</Tabs>
+```
+
+### 실패 시 동작
+
+트랜잭션 실행 중 오류가 발생하면 모든 상태 변경이 롤백된다. 단, 가스는 환불되지 않는다.
+
+```
+실패 케이스:
+- Out of gas: 가스 부족
+- Invalid opcode: 알 수 없는 명령어
+- Stack underflow/overflow: 스택 범위 초과
+- REVERT: 명시적 롤백
+- Invalid jump destination: JUMPDEST가 아닌 위치로 점프
+
+모든 경우:
+- State changes: 롤백됨
+- Gas: 소모됨 (환불 없음)
+- Receipt status: 0 (FAILED)
+```
+
+이 설계는 스팸 공격을 방지한다. 실패해도 가스를 소모하므로, 공격자는 실패 트랜잭션을 대량 생성해도 비용을 지불해야 한다.
+
+## 주요 Opcode
+
+EVM은 약 140개의 opcode를 지원한다. 주요 opcode를 카테고리별로 살펴본다.
+
+### 산술 및 비교 연산 (3 gas)
+
+```
+ADD, SUB, MUL, DIV, MOD     - 기본 산술
+ADDMOD, MULMOD              - 모듈러 연산
+EXP                         - 지수 (10 gas + 50 × byte_size)
+LT, GT, SLT, SGT, EQ        - 비교
+ISZERO                      - 0인지 확인
+AND, OR, XOR, NOT           - 비트 연산
+SHL, SHR, SAR               - 시프트 (Constantinople 이후)
+```
+
+### 스택 조작 (3 gas)
+
+```
+PUSH1 ~ PUSH32    - 1~32 바이트 값을 스택에 푸시
+POP               - 스택 최상단 제거
+DUP1 ~ DUP16      - 스택 n번째 항목 복제
+SWAP1 ~ SWAP16    - 스택 최상단과 n번째 항목 교환
+```
+
+### 메모리 조작
+
+```
+MLOAD   (3+ gas)   - 메모리에서 32바이트 로드
+MSTORE  (3+ gas)   - 메모리에 32바이트 저장
+MSTORE8 (3+ gas)   - 메모리에 1바이트 저장
+MSIZE   (2 gas)    - 현재 메모리 크기
+```
+
+### 스토리지 조작
+
+```
+SLOAD   (100/2100 gas)     - 스토리지에서 로드 (warm/cold)
+SSTORE  (100~22100 gas)    - 스토리지에 저장 (상황에 따라 다름)
+```
+
+### 컨트랙트 호출
+
+```
+CALL          - 다른 컨트랙트 호출
+DELEGATECALL  - 호출자 컨텍스트로 다른 코드 실행
+STATICCALL    - 읽기 전용 호출 (상태 변경 불가)
+```
+
+DELEGATECALL은 proxy 패턴의 핵심이다. 호출된 코드가 호출자의 storage와 msg.sender를 사용한다.
+
+```
+CALL vs DELEGATECALL:
+
+Contract A calls Contract B via CALL:
+  - msg.sender in B = A
+  - storage access = B's storage
+
+Contract A calls Contract B via DELEGATECALL:
+  - msg.sender in B = original sender (not A)
+  - storage access = A's storage (!)
+```
+
+### 컨트랙트 생성
+
+```
+CREATE   (32000+ gas)   - 새 컨트랙트 생성
+CREATE2  (32000+ gas)   - deterministic 주소로 컨트랙트 생성
+```
+
+CREATE2의 주소는 배포 전에 계산할 수 있어, counterfactual deployment나 factory 패턴에 유용하다.
+
+```solidity title="contracts/ethereum/StateAccess.sol"
+/**
+ * @notice Predict CREATE2 address before deployment
+ */
+function predictCreate2Address(bytes32 salt) external view returns (address) {
+  bytes memory bytecode = type(SimpleStorage).creationCode;
+  bytes32 hash = keccak256(
+    abi.encodePacked(bytes1(0xff), address(this), salt, keccak256(bytecode))
+  );
+  return address(uint160(uint256(hash)));
+}
+```
+
+### 이벤트 로깅
+
+```
+LOG0  (375 gas)         - 0개 indexed topic
+LOG1  (750 gas)         - 1개 indexed topic
+LOG2  (1125 gas)        - 2개 indexed topic
+LOG3  (1500 gas)        - 3개 indexed topic
+LOG4  (1875 gas)        - 4개 indexed topic
+
++ 8 gas × data byte size
+```
+
+## Receipt와 로그
+
+트랜잭션 실행 후 Receipt가 생성된다. Receipt는 실행 결과를 기록하며, 블록의 receiptsRoot 계산에 사용된다.
+
+### Receipt 구조
+
+
+| Field         | Description                    |
+|---------------|--------------------------------|
+| status        | 1 (성공) 또는 0 (실패)          |
+| cumulativeGas | 블록 내 누적 가스 사용량        |
+| logsBloom     | 로그 검색용 bloom filter        |
+| logs          | 이벤트 로그 배열                |
+
+### 이벤트 로그
+
+이벤트 로그는 트랜잭션 실행 중 발생한 이벤트를 기록한다.
+
+```
+Log Structure:
+  address    - 이벤트를 발생시킨 컨트랙트 주소
+  topics[]   - 최대 4개의 32바이트 indexed 값
+               topics[0] = keccak256(event signature)
+               topics[1~3] = indexed 파라미터
+  data       - non-indexed 파라미터 (ABI 인코딩)
+```
+
+```solidity title="contracts/ethereum/StateAccess.sol"
+// Events for demonstrating logs and topics
+event ValueSet(address indexed setter, uint256 indexed slot, uint256 value);
+event Transfer(address indexed from, address indexed to, uint256 amount);
+
+/**
+ * @notice Emits multiple events with different topic counts
+ */
+function emitEvents(uint256 amount) external {
+  // 2 indexed params = 3 topics (1 event sig + 2 indexed)
+  emit ValueSet(msg.sender, 0, amount);
+
+  // 2 indexed params = 3 topics
+  emit Transfer(msg.sender, address(this), amount);
+}
+```
+
+`emitEvents(100)` 호출 시 Transfer 이벤트의 로그 구조는 다음과 같다.
+
+```
+topics[0] = keccak256("Transfer(address,address,uint256)")
+topics[1] = msg.sender (indexed)
+topics[2] = address(this) (indexed)
+data      = abi.encode(100) (non-indexed)
+```
+
+indexed 파라미터는 topics에 포함되어 빠른 검색이 가능하지만, 32바이트로 제한된다. non-indexed 파라미터는 data에 인코딩되어 크기 제한이 없지만, 검색이 느리다.
+
+### Bloom Filter
+
+블록의 logsBloom은 해당 블록에 특정 로그가 포함되어 있는지 빠르게 확인할 수 있는 확률적 자료구조이다.
+
+- **크기:** 2048 bits (256 bytes)
+- **False positive:** 포함되지 않은 로그를 포함되었다고 응답할 수 있음
+- **False negative:** 없음. 포함된 로그는 반드시 검출됨
+
+Light client가 특정 이벤트를 검색할 때, 모든 블록의 전체 로그를 확인하지 않고 bloom filter로 후보 블록을 먼저 필터링할 수 있다.
+
+## 이더리움 상태 구조
+
+이더리움의 상태는 모든 계정의 정보를 담고 있는 World State이다.
+
+### Account 구조
+
+Account Structure (RLP encoded in state trie):
+
+| Field       | Description                          |
+|-------------|--------------------------------------|
+| nonce       | EOA: 전송한 트랜잭션 수               |
+|             | Contract: 생성한 컨트랙트 수          |
+| balance     | Wei 잔액 (1 ETH = 10¹⁸ wei)           |
+| storageRoot | Storage Trie의 루트 해시              |
+|             | (EOA는 empty trie root)               |
+| codeHash    | keccak256(bytecode)                   |
+|             | (EOA는 keccak256(""))                 |
+
+### EOA vs Contract Account
+
+| EOA                         | Contract Account              |
+|-----------------------------|-------------------------------|
+| Private key로 제어          | Code로 제어                    |
+| 트랜잭션 생성 가능          | 트랜잭션 생성 불가             |
+| codeHash = keccak256("")    | codeHash = keccak256(code)     |
+| storageRoot = empty         | storageRoot = storage trie     |
+| 코드 없음                   | 불변의 코드 보유               |
+
+## Merkle Patricia Trie (MPT)
+
+이더리움은 상태를 Merkle Patricia Trie에 저장한다. MPT는 Merkle Tree와 Patricia Trie를 결합한 자료구조이다.
+
+### 왜 MPT인가
+
+1. **암호학적 증명:** 루트 해시만으로 전체 데이터의 무결성 검증 가능
+2. **효율적 업데이트:** 변경된 경로만 업데이트 (O(log n))
+3. **경로 압축:** 공통 접두사를 압축하여 공간 효율성 향상
+4. **증명 생성:** Light client가 특정 데이터의 포함 여부를 검증 가능
+
+### 노드 타입
+
+MPT는 세 가지 노드 타입으로 구성된다.
+
+Node Types:
+
+1. **Leaf Node:** `[encodedPath, value]`  
+   경로의 끝에 위치하며 실제 데이터를 저장한다.
+2. **Extension Node:** `[encodedPath, childHash]`  
+   공통 접두사를 압축하고 하나의 자식만 가진다.
+3. **Branch Node:** `[child0, child1, ..., child15, value]`  
+   16개 자식(hex digit별)을 가지며, 선택적으로 값을 저장한다.
+
+### State Trie 구조
+
+```
+                    ┌─────────────────────┐
+                    │     State Root      │
+                    │   (block header)    │
+                    └──────────┬──────────┘
+                               │
+              ┌────────────────┼────────────────┐
+              ▼                ▼                ▼
+        ┌──────────┐    ┌──────────┐    ┌──────────┐
+        │ Account  │    │ Account  │    │ Account  │
+        │   (EOA)  │    │(Contract)│    │   ...    │
+        └──────────┘    └────┬─────┘    └──────────┘
+                             │
+                    ┌────────┘
+                    ▼
+              ┌───────────────┐
+              │ Storage Trie  │
+              │ (contract's   │
+              │  state vars)  │
+              └───────────────┘
+```
+
+- **State Trie:** address → Account 매핑. 키는 `keccak256(address)`이며, 값은 해당 계정의 RLP 인코딩된 Account 구조다. 즉 stateRoot는 모든 계정 상태의 요약 해시다.
+- **Storage Trie:** 각 컨트랙트마다 하나씩 존재한다. 슬롯 번호 → 값 매핑이며, 키는 `keccak256(slot)`이다. 배열/매핑 슬롯은 `keccak256(slot || key)` 규칙으로 계산되어 실제 저장 위치가 결정된다.
+
+### Proof 생성과 검증
+
+Light client는 state root와 proof만으로 특정 계정의 상태를 검증할 수 있다.
+
+Merkle Proof Verification은 다음 순서로 진행된다.
+
+1. **기준 확보:** 검증된 블록 헤더에서 신뢰할 수 있는 state root를 확보한다.
+2. **증명 수신:** 루트에서 리프까지의 경로에 해당하는 노드 집합(머클 증명)을 받는다.
+3. **해시 재계산:** 리프부터 루트까지 각 노드의 해시를 다시 계산하고, 부모 노드가 참조한 해시와 일치하는지 확인한다.
+4. **값 확인:** 최종 리프 노드의 값이 요청한 데이터와 일치하는지 확인한다.
+5. **판정:** 일치하면 포함이 증명되고, 불일치하면 데이터가 없거나 변조된 것이다.
+
+이 메커니즘 덕분에 light client는 전체 상태(수 TB)를 저장하지 않고도 특정 데이터를 검증할 수 있다.
+
+## 상태 동기화
+
+새 노드가 네트워크에 참여할 때 현재 상태를 동기화해야 한다.
+
+### 동기화 방식
+
+| 방식 | 설명 | 장단점 |
+|------|------|--------|
+| **Full Sync** | 제네시스부터 모든 블록 재실행 | 가장 완전하지만 가장 느림 |
+| **Snap Sync** | 최근 상태 스냅샷 다운로드 후 최신 블록만 실행 | 빠른 시작, geth 기본값 |
+| **Light Sync** | 헤더만 동기화, 필요시 proof 요청 | 최소 저장공간, 풀노드 의존 |
+
+Snap sync가 현재 대부분의 노드에서 사용된다. 최근 상태의 스냅샷을 다운로드하고 state root로 검증한 뒤, 이후 블록만 재실행한다.
+
+### Archive vs Full Node
+
+| Full Node               | Archive Node                 |
+|-------------------------|------------------------------|
+| 최근 128 블록 상태 유지 | 모든 역사적 상태 유지        |
+| 오래된 상태 pruning     | pruning 없음                 |
+| ~1 TB 스토리지          | ~15+ TB 스토리지             |
+| 최근 상태 쿼리 가능     | 모든 블록의 상태 쿼리 가능   |
+| 일반 사용자, 밸리데이터 | 블록 탐색기, 분석, 디버깅    |
+
+Full node에서 `eth_call`에 과거 블록 번호를 지정하면 "missing trie node" 에러가 발생할 수 있다. 과거 상태를 쿼리해야 한다면 archive node가 필요하다.
+
+상태는 블록마다 증가하므로, 무한히 커지는 것을 방지하기 위해 오래된 상태를 삭제하는 pruning이 필요하다.
+pruning은 디스크 공간을 절약하기 위해 최근 128개 블록의 상태만 유지하고 그 이전 상태는 삭제한다. 그 결과 과거 상태 쿼리는 불가능해진다.
+
+:::info Verkle Tree
+이더리움은 MPT를 Verkle Tree로 전환하는 것을 계획하고 있다. Verkle Tree는 증명 크기가 훨씬 작아 light client 효율성이 크게 향상된다. Pectra 업그레이드 이후 단계적으로 도입될 예정이다.
+:::
+
+## 정리
+
+트랜잭션 실행과 상태 관리의 전체 흐름을 요약한다.
+
+1. **블록 빌딩:** mempool에서 트랜잭션 선택, effective gas price 순 정렬
+2. **트랜잭션 실행:** StateTransition 과정, 가스 선차감 → EVM 실행 → 상태 변경
+3. **EVM:** 스택 기반 머신, Stack/Memory/Storage/Calldata 메모리 모델
+4. **상태 저장:** World State는 MPT에 저장, state root가 블록 헤더에 포함
+5. **Receipt:** 실행 결과와 이벤트 로그 기록, receipts root로 검증
+
+이 과정을 통해 이더리움은 전 세계의 노드가 동일한 상태에 합의할 수 있다. state root가 일치하면 모든 노드가 같은 상태를 갖고 있음이 암호학적으로 보장된다.
+
+[다음 글](./04-consensus-finality.mdx)에서는 이렇게 생성된 블록이 어떻게 네트워크에서 합의되고 최종 확정(finality)되는지 살펴본다.
+
+글에서 사용된 예시코드는 [crypto-examples/solidity-examples](https://github.com/chihunmanse/crypto-examples/tree/main/solidity-examples/scripts/ethereum)에서 확인할 수 있다.
+
+## 참조
+
+- [Ethereum.org - Blocks](https://ethereum.org/developers/docs/blocks/)
+- [Ethereum.org - EVM](https://ethereum.org/developers/docs/evm/)
+- [Ethereum.org - Gas](https://ethereum.org/developers/docs/gas/)
+- [Ethereum Yellow Paper](https://ethereum.github.io/yellowpaper/paper.pdf)
+- [EVM Opcodes](https://www.evm.codes/)
+- [EIP-2929: Gas cost increases for state access opcodes](https://eips.ethereum.org/EIPS/eip-2929)
+- [EIP-3529: Reduction in refunds](https://eips.ethereum.org/EIPS/eip-3529)
+- [geth source: core/vm/](https://github.com/ethereum/go-ethereum/tree/master/core/vm)
+- [geth source: core/state/](https://github.com/ethereum/go-ethereum/tree/master/core/state)
+- [geth source: trie/](https://github.com/ethereum/go-ethereum/tree/master/trie)

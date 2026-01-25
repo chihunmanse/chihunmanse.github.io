@@ -1,0 +1,707 @@
+---
+title: 4. Consensus and Finality
+description: "How Ethereum achieves consensus and finality through PoS, validators, attestations, and the Gasper protocol"
+keywords: [Ethereum, consensus, PoS, PoW, validator, finality, attestation, Gasper, LMD-GHOST, Casper FFG, slashing]
+tags: [Ethereum, Consensus]
+sidebar_position: 4
+---
+
+# 4. Consensus and Finality
+
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+[이전 글](./03-block-execution-state.mdx)에서 트랜잭션이 EVM에서 실행되어 상태가 변경되는 과정을 살펴보았다. 그런데 각 노드가 독립적으로 트랜잭션을 실행한다면, 어떻게 모든 노드가 동일한 상태에 도달할 수 있을까? 이 글에서는 이더리움의 합의 메커니즘을 분석한다. The Merge 이전의 PoW부터 현재의 PoS까지, 블록이 어떻게 체인에 확정되는지 살펴본다.
+
+## 합의의 필요성
+
+분산 시스템에서 합의(Consensus)란 여러 노드가 단일한 상태에 동의하는 과정이다. 블록체인에서는 "어떤 트랜잭션을 어떤 순서로 실행할 것인가"에 대한 합의가 필요하다.
+
+### 비잔틴 장애 허용 (BFT)
+
+분산 시스템에서는 노드가 실패하거나 악의적으로 행동할 수 있다. 비잔틴 장군 문제(Byzantine Generals Problem)는 이런 상황에서 정직한 노드들이 어떻게 합의에 도달할 수 있는지를 다룬다.
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      Byzantine Generals Problem                         │
+└─────────────────────────────────────────────────────────────────────────┘
+
+      General A                General B                General C
+    (Commander)               (Honest)                 (Traitor)
+         │                        │                        │
+         ├──── "Attack" ─────────►│                        │
+         ├──── "Attack" ───────────────────────────────────►
+         │                        │                        │
+         │                        │◄─── "Retreat" ─────────┤
+         │                        │                        │
+         │                   ┌────┴────┐                   │
+         │                   │ What to │                   │
+         │                   │ decide? │                   │
+         │                   └─────────┘                   │
+
+  - 정직한 노드는 동일한 결정에 도달해야 한다.
+  - 악의적 노드가 있어도 시스템이 동작해야 한다.
+  - 전통적 BFT: 노드의 1/3 미만이 악의적일 때 합의 가능
+```
+
+이더리움의 합의 메커니즘은 네트워크에 악의적인 참여자가 있더라도 정직한 노드들이 동일한 블록체인 상태에 합의할 수 있도록 설계되었다.
+
+### 합의 메커니즘의 두 가지 역할
+
+블록체인의 합의 메커니즘은 두 가지 핵심 문제를 해결한다.
+
+1. **Sybil Resistance:** 누가 블록을 제안할 자격이 있는가?
+   - PoW: 계산 능력(해시파워)을 증명한 자
+   - PoS: 담보(스테이크)를 예치한 자
+2. **Chain Selection:** 여러 체인 중 어떤 것이 정당한 체인인가?
+   - PoW: 가장 많은 작업이 투입된 체인 (Longest Chain Rule)
+   - PoS: 가장 많은 지지를 받은 체인 (LMD-GHOST + Casper FFG)
+
+## PoW: The Merge 이전
+
+2022년 9월 The Merge 이전까지 이더리움은 작업 증명(Proof of Work)을 사용했다. PoW의 핵심 아이디어는 "계산 비용을 지불해야만 블록을 생성할 수 있다"는 것이다.
+
+### Ethash 알고리즘
+
+이더리움의 PoW 알고리즘인 Ethash는 ASIC 저항성을 목표로 설계되었다. 비트코인의 SHA-256과 달리, 대량의 메모리 접근이 필요하여 전용 채굴 칩(ASIC) 개발이 어렵도록 했다.
+
+Ethash 채굴 흐름은 다음과 같다. 먼저 seed로 16MB 캐시를 만들고, 캐시에서 약 1GB 크기의 DAG를 생성한다. DAG는 에폭마다 갱신된다. 채굴자는 블록 헤더와 nonce를 조합해 DAG 데이터를 섞고 해시를 계산한 뒤, 결과가 난이도 목표(target)보다 작은지 확인한다. 조건을 만족하면 블록이 채굴되고, 실패하면 nonce를 바꿔 반복한다.
+
+DAG(Directed Acyclic Graph)는 약 1GB 크기의 데이터셋으로, 채굴 시 빈번하게 접근해야 한다. 이 메모리 요구사항이 ASIC 개발을 어렵게 만들었지만, 결국 Ethash ASIC도 등장했다.
+
+### 난이도 조정
+
+이더리움은 평균 블록 시간을 약 13-14초로 유지하기 위해 난이도를 동적으로 조정했다.
+
+```
+난이도 조정 공식 (간략화):
+  if 블록 시간 < 10초:
+      난이도 증가
+  elif 블록 시간 > 20초:
+      난이도 감소
+  else:
+      유지
+```
+
+The Merge를 앞두고 "Difficulty Bomb"이 도입되어 난이도가 급격히 증가하도록 설계되었다. 이는 PoS 전환을 강제하기 위한 장치였다.
+
+### Longest Chain Rule
+
+PoW에서 정당한 체인은 "가장 많은 작업이 투입된 체인"이다. 실제로는 누적 난이도(Total Difficulty)가 가장 높은 체인을 선택한다.
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          Longest Chain Rule                             │
+└─────────────────────────────────────────────────────────────────────────┘
+
+  Block 100 ─── Block 101 ─── Block 102 ─── Block 103    ◄── 정당한 체인
+                    │                                         (더 긴 체인)
+                    └──────── Block 102'                 ◄── 고아 블록
+                                                              (orphaned)
+
+  - 동시에 여러 블록이 발견되면 일시적으로 포크 발생
+  - 더 긴 체인이 형성되면 짧은 체인의 블록은 고아가 됨
+  - 고아 블록의 트랜잭션은 무효화되고 mempool로 돌아감
+```
+
+### 확률적 Finality
+
+PoW에서는 블록이 "확정"되지 않는다. 대신 블록 위에 더 많은 블록이 쌓일수록 되돌리기가 어려워진다. 이를 확률적 finality라고 한다.
+
+```
+Block 100에 대한 재구성(reorg) 확률:
+
+  Confirmations    재구성 확률
+  ─────────────────────────────
+       1           ~10%
+       6           ~0.1%
+      12           ~0.001%
+      30           사실상 불가능
+
+  * 6 confirmations (약 1분)가 일반적인 기준
+  * 거래소는 보통 12-30 confirmations 요구
+```
+
+그러나 이론적으로는 충분한 해시파워가 있다면 언제든 체인을 재구성할 수 있다. 이것이 PoW의 근본적 한계이다.
+
+### Uncle (Ommer) Blocks
+
+이더리움 PoW에서는 거의 동시에 발견된 블록 중 정당한 체인에 포함되지 못한 블록을 "Uncle" 또는 "Ommer" 블록이라고 불렀다. 완전히 버리지 않고 부분 보상을 제공하여 마이너의 수익을 안정화했다.
+
+```
+Main Chain:    Block N ─────────── Block N+1 ─────────── Block N+2
+                  │                    │
+                  │                    └── uncles: [Uncle A]
+                  │
+Uncle Block:   Uncle A (동시에 채굴되었으나 메인 체인에 포함 안 됨)
+
+보상:
+  - 메인 블록 채굴자: 2 ETH + Uncle 포함 보상
+  - Uncle 블록 채굴자: (8 - 거리) / 8 × 2 ETH
+```
+
+PoS 전환 후 Uncle 개념은 사라졌다. Slot 기반 시스템에서는 각 slot에 하나의 블록만 제안되기 때문이다.
+
+## PoS로의 전환
+
+### 왜 PoS인가?
+
+PoW에서 PoS로 전환한 이유는 다음과 같다.
+
+- **에너지 효율성:** PoW는 막대한 전력을 소비한다. 이더리움의 PoS 전환으로 에너지 소비가 99.95% 감소했다.
+- **탈중앙화:** PoW에서는 대규모 채굴 시설이 유리하여 중앙화 경향이 있었다. PoS에서는 32 ETH만 있으면 누구나 validator가 될 수 있다.
+- **경제적 보안:** PoW는 공격자가 장비와 전기를 투입해 해시파워를 확보하면 되며, 공격 후에도 장비를 되팔 수 있어 비용 회수가 가능하다. 반면 PoS는 공격에 사용한 스테이크가 직접 슬래싱되므로 비용이 즉시 확정되고 회수하기 어렵다.
+- **Finality:** PoW의 확률적 finality와 달리, PoS는 결정론적 finality를 제공한다. 약 13분 후 블록은 되돌릴 수 없다.
+
+### The Merge
+
+2022년 9월 15일, 이더리움은 Execution Layer(기존 PoW 체인)와 Consensus Layer(Beacon Chain)를 병합했다. 이를 "The Merge"라고 한다.
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                              The Merge                                  │
+└─────────────────────────────────────────────────────────────────────────┘
+
+  Before The Merge:
+
+    PoW Chain                      Beacon Chain (PoS)
+    (Execution)                    (Consensus)
+  ┌─────────────┐                ┌─────────────────┐
+  │ Transactions│                │ Validators      │
+  │ + Mining    │                │ + Attestations  │
+  │ + Consensus │                │ (no execution)  │
+  └─────────────┘                └─────────────────┘
+        │                              │
+        │         The Merge            │
+        └──────────────┬───────────────┘
+                       ▼
+  After The Merge:
+
+         Execution Layer          Consensus Layer
+       ┌─────────────────┐      ┌─────────────────┐
+       │ Transactions    │◄────►│ Validators      │
+       │ EVM Execution   │      │ Block Proposal  │
+       │ State Management│      │ Attestations    │
+       └─────────────────┘      │ Finality        │
+           (geth, etc.)         └─────────────────┘
+                                 (Prysm, Lighthouse, etc.)
+```
+
+The Merge의 핵심은 합의 로직을 Execution Layer에서 Consensus Layer로 이전한 것이다. 트랜잭션 실행과 상태 관리는 여전히 Execution Layer가 담당하지만, "어떤 블록이 정당한가"의 결정은 Consensus Layer가 한다.
+
+## Validator
+
+### Validator가 되는 방법
+
+validator가 되려면 32 ETH를 Beacon Chain의 deposit contract에 예치해야 한다.
+
+1. **예치:** 사용자가 32 ETH를 Deposit Contract에 전송한다. (`0x00000000219ab540356cbb839cbe05303d7705fa`)
+2. **감지:** Beacon Chain이 예치를 감지하고 validator를 대기열(Pending Queue)에 넣는다.
+3. **활성화:** epoch 경계에서 대기열이 처리되며 Active Validator로 전환된다.
+
+deposit 후 바로 활성화되지 않는다. 보안을 위해 대기열(activation queue)이 존재하며, epoch당 활성화되는 validator 수가 제한된다. 2025년 기준 약 106만 개의 validator가 활동 중이며, 약 3,500만 ETH(전체 공급량의 약 29%)가 스테이킹되어 있다.
+
+### Validator 상태 전이
+
+Validator 상태 전이는 다음 흐름으로 이해할 수 있다.
+
+1. **Deposit → Pending**  
+   32 ETH를 예치하면 validator는 Pending 상태로 들어가며, 활성화 대기열에 놓인다.
+2. **Pending → Active**  
+   activation이 되면 Active로 전환되고 블록 제안과 attestation을 수행한다.
+3. **Active 이후의 분기**  
+   - **Voluntary exit:** 자발적으로 나가면 Exiting으로 이동  
+   - **Slashed:** 규칙 위반 시 Exiting으로 이동  
+   - **Ejected:** 잔액이 16 ETH 미만이면 강제 종료되어 Exiting으로 이동
+4. **Exiting → Withdrawable**  
+   exit queue를 거친 뒤 출금 가능한 상태로 전환된다.
+5. **Reactivate (재예치)**  
+   출금 이후 다시 예치하면 새로운 validator로 등록되어 흐름이 반복된다.
+
+- **Active:** 정상적으로 의무를 수행하는 상태. 블록 제안과 attestation에 참여한다.
+- **Slashed:** 프로토콜 위반(double voting, surround voting) 시 강제 퇴출. 스테이크의 일부가 소각된다.
+- **Exited:** 자발적 탈퇴 또는 잔액 부족으로 퇴출. exit queue를 거쳐 출금 가능 상태가 된다.
+
+### Validator 책임과 보상
+
+validator는 두 가지 주요 역할을 수행한다.
+
+1. **블록 제안 (Proposing):** 선정되면 새 블록을 제안
+2. **증명 (Attesting):** 다른 validator가 제안한 블록에 투표
+
+
+| 역할           | 보상                | 패널티              |
+|---------------|---------------------|---------------------|
+| Block Proposal| ~0.02 ETH/block      | 누락 시 기회 손실   |
+| Attestation   | ~0.000014 ETH/slot   | 누락 시 동일 금액   |
+| Sync Committee| 추가 보상            | 누락 시 패널티      |
+| Slashable 위반| -                    | 최소 1/32 소각      |
+
+* 2025년 기준 연간 수익률(APR): 약 2.9-3%
+* 수익률은 총 스테이킹 양에 반비례
+
+## 시간 단위: Slot과 Epoch
+
+PoS 이더리움은 시간을 slot과 epoch으로 나눈다.
+
+### Slot
+
+**Slot**은 12초 단위의 시간이다. 각 slot에서 한 명의 validator가 블록을 제안할 기회를 갖는다.
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                            Slot Timeline                                │
+└─────────────────────────────────────────────────────────────────────────┘
+
+  Slot N                          Slot N+1                      Slot N+2
+  │◄──────── 12 seconds ────────►│◄──────── 12 seconds ───────►│
+  │                               │                              │
+  t=0   t=4      t=8     t=12    t=0                            t=0
+  │     │        │        │       │                              │
+  ▼     ▼        ▼        ▼       ▼                              ▼
+┌───┬───────┬─────────┬─────┐   ┌───┐
+│ P │   A   │    Ag   │ Pr  │   │ P │ ...
+└───┴───────┴─────────┴─────┘   └───┘
+
+P: Block Proposal (0-4초)  
+A: Attestations 수집 (4-8초)  
+Ag: Aggregation (8-12초)  
+Pr: 다음 slot 준비
+```
+
+1. Proposer가 블록 제안 (0-4초)
+2. Committee 멤버들이 attestation 생성 (4-8초)
+3. Aggregator가 attestation을 집계 (8-12초)
+
+모든 slot에서 블록이 생성되는 것은 아니다. Proposer가 오프라인이거나 네트워크 지연이 있으면 slot이 비어 있을 수 있다(missed slot).
+
+### Epoch
+
+**Epoch**은 32개의 slot으로 구성되며, 약 6.4분이다. Epoch 경계에서 중요한 작업들이 수행된다.
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           Epoch Structure                               │
+└─────────────────────────────────────────────────────────────────────────┘
+
+  Epoch N                                                    Epoch N+1
+  ├─────────────────────────────────────────────────────────┼─────────────
+  │  Slot 0 │ Slot 1 │ ... │ Slot 31 │                      │  Slot 0 │...
+  │         │        │     │         │                      │         │
+  └─────────┴────────┴─────┴─────────┘                      └─────────┴───
+```
+#### Epoch 경계에서 수행되는 작업
+1. Justification/Finalization 체크
+2. Validator 보상/패널티 정산
+3. Validator 활성화/퇴출 처리
+4. RANDAO 믹싱 (다음 epoch proposer 선정용)
+5. Sync Committee 교체 (256 epoch마다) 
+
+### Committee
+
+각 slot에는 **committee**가 배정된다. Committee는 해당 slot의 블록에 attestation을 제출할 validator 그룹이다.
+
+Committee 배정 흐름은 다음과 같다. Epoch N의 전체 active validator(약 106만 명)를 RANDAO로 셔플한 뒤, 각 slot에 committee를 배정한다. 각 slot에는 여러 committee가 배정되고, 전체적으로 slot당 약 3.1만 명 수준이 참여한다.
+
+- 각 validator는 epoch당 정확히 1번 attestation 의무
+- Committee 배정은 RANDAO로 결정되어 예측 불가능
+- 최소 128명의 committee 크기 보장 (보안상 필요)
+
+## 블록 제안 (Proposing)
+
+### Proposer 선정
+
+각 slot의 proposer는 RANDAO(RANdom DAO)를 통해 결정된다. RANDAO는 모든 validator가 기여하는 의사난수 생성 메커니즘이다.
+
+RANDAO 메커니즘은 다음과 같이 동작한다.
+
+1. **Reveal 포함:** 각 proposer는 블록에 RANDAO reveal을 포함한다. reveal은 `BLS_sign(epoch, validator_private_key)`로 생성된다.
+2. **Mix 계산:** Epoch N의 mix는 이전 mix에 각 reveal의 해시를 XOR해 계산한다.  
+   `randao_mix[N] = randao_mix[N-1] XOR hash(reveal_0) XOR ... XOR hash(reveal_31)`
+3. **Proposer 선정:** `seed = hash(randao_mix || slot)`을 만들고,  
+   `proposer_index = seed mod active_validator_count`로 선택한다.  
+   실제로는 effective balance로 가중치가 적용된다.
+
+RANDAO는 완벽한 난수는 아니다. 마지막 proposer는 자신의 reveal을 공개할지 선택하여 결과에 약간의 영향을 줄 수 있다. 그러나 이 영향력은 제한적이며, 미래의 VDF(Verifiable Delay Function) 도입으로 해결될 예정이다.
+
+### 블록 빌딩과 MEV-Boost
+
+proposer로 선정되면 블록을 구성해야 한다. 현재 대부분의 validator는 MEV-Boost를 통해 전문 블록 빌더에게 블록 구성을 위임한다.
+
+MEV-Boost 유무에 따른 블록 빌딩 흐름은 다음과 같다.
+
+1. **MEV-Boost 없이 (로컬 빌딩)**  
+   Validator(=Proposer)가 로컬 EL(txpool)에서 트랜잭션을 선택해 블록을 만들고 직접 제안한다.
+2. **MEV-Boost 사용 (PBS)**  
+   Searcher가 번들(bundles)을 만들고, Builder가 이를 조합해 블록을 구성한다.  
+   Relay가 Builder의 블록을 중계하고, Validator는 가장 높은 bid를 선택해 서명/제안한다.
+
+PBS(Proposer-Builder Separation)의 역할은 다음과 같다.
+- **Proposer:** 최고 bid의 블록을 선택하고 서명
+- **Builder:** MEV를 추출해 수익 최적화된 블록 구성
+- **Relay:** Builder와 Proposer 사이의 신뢰 계층
+
+MEV-Boost는 약 90%의 이더리움 블록에서 사용된다. Proposer는 블록 내용을 모른 채(blind) 가장 높은 bid를 선택하고, 서명 후에야 블록 내용이 공개된다.
+
+## 증명 (Attestation)
+
+### Attestation이란
+
+**Attestation**은 validator가 체인의 현재 상태에 대해 투표하는 것이다. 각 attestation은 세 가지 정보를 담는다.
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         Attestation Structure                           │
+└─────────────────────────────────────────────────────────────────────────┘
+
+  Attestation = {
+    slot:              투표 대상 slot,
+    beacon_block_root: 체인의 head로 보는 블록 해시,
+
+    source: {          Casper FFG source checkpoint
+      epoch:  N-1,
+      root:   justified 블록 해시
+    },
+
+    target: {          Casper FFG target checkpoint
+      epoch:  N,
+      root:   현재 epoch의 첫 slot 블록 해시
+    },
+
+    aggregation_bits:  committee 멤버 비트맵,
+    signature:         BLS 서명
+  }
+```
+
+Attestation의 세 가지 투표.
+
+1. Head vote (LMD-GHOST용): "현재 체인의 head는 이 블록이다"에 대한 투표
+2. Source vote (Casper FFG용): "이 source checkpoint가 이미 justified 상태다"에 대한 투표
+3. Target vote (Casper FFG용): "이 target checkpoint를 다음으로 justify하자"에 대한 투표
+
+### Aggregation
+
+수십만 개의 개별 attestation을 처리하는 것은 비효율적이다. 같은 내용에 투표한 attestation은 하나로 합쳐진다.
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        Attestation Aggregation                          │
+└─────────────────────────────────────────────────────────────────────────┘
+
+  Committee: [V0, V1, V2, V3, V4, V5, V6, V7]  (8명 예시)
+
+  개별 Attestation:
+    V0: sig_0, bits=[1,0,0,0,0,0,0,0]
+    V1: sig_1, bits=[0,1,0,0,0,0,0,0]
+    V3: sig_3, bits=[0,0,0,1,0,0,0,0]
+    V5: sig_5, bits=[0,0,0,0,0,1,0,0]
+    (같은 head, source, target에 투표한 경우)
+
+  Aggregated Attestation:
+    aggregate_sig = BLS_aggregate(sig_0, sig_1, sig_3, sig_5)
+    bits = [1,1,0,1,0,1,0,0]
+```
+
+- BLS 서명의 특성상 여러 서명을 하나로 합칠 수 있음
+- 블록에 포함되는 데이터 양 대폭 감소
+- 각 committee에서 16명의 aggregator가 선정됨
+
+BLS(Boneh-Lynn-Shacham) 서명은 aggregation이 가능한 서명 방식이다. 이 특성 덕분에 수십만 validator의 투표를 효율적으로 처리할 수 있다.
+
+## Fork Choice: LMD-GHOST
+
+### LMD-GHOST 알고리즘
+
+**LMD-GHOST**(Latest Message Driven Greedy Heaviest Observed SubTree)는 가장 많은 지지를 받은 fork를 선택하는 알고리즘이다.
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          LMD-GHOST Example                              │
+└─────────────────────────────────────────────────────────────────────────┘
+
+  각 validator의 최신(Latest) attestation만 고려:
+
+                    Block A (genesis)
+                    weight: 100
+                       │
+           ┌───────────┴───────────┐
+           │                       │
+        Block B                 Block C
+        weight: 60              weight: 40
+           │                       │
+        Block D                 Block E
+        weight: 55              weight: 35
+           │
+        Block F
+        weight: 55
+
+  Fork choice 과정:
+  1. Root(A)에서 시작
+  2. 자식 중 weight가 높은 쪽 선택: B(60) > C(40) → B 선택
+  3. B의 자식: D만 있음 → D 선택
+  4. D의 자식: F만 있음 → F 선택
+  5. Head = Block F
+
+  "LMD" = Latest Message Driven
+  - 각 validator당 가장 최신 attestation만 카운트
+  - 같은 validator의 이전 투표는 무시
+```
+
+### Greedy와 Subtree
+
+"Greedy"는 매 단계에서 지역 최적을 선택한다는 의미이다. "Subtree"는 블록 자체뿐 아니라 그 하위의 모든 블록에 대한 투표를 합산한다는 의미이다.
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         Subtree Weight Calculation                      │
+└─────────────────────────────────────────────────────────────────────────┘
+
+        Block B                           Block C
+           │                                 │
+     ┌─────┴─────┐                     ┌─────┴─────┐
+     │           │                     │           │
+  Block D     Block E               Block F     Block G
+  votes:20    votes:15              votes:30    votes:10
+
+  Block B의 subtree weight = votes(B) + votes(D) + votes(E)
+                           = 25 + 20 + 15 = 60
+
+  Block C의 subtree weight = votes(C) + votes(F) + votes(G)
+                           = 5 + 30 + 10 = 45
+
+  → Block B의 subtree가 더 무거우므로 B 선택
+```
+
+정리하면, LMD-GHOST는 **루트에서 시작해 각 단계마다 subtree weight가 가장 큰 자식으로 내려가며** 더 이상 내려갈 수 없을 때의 블록을 **head**로 결정한다. 이 head가 현재 네트워크가 따라갈 체인의 끝이며, 다음 블록 제안과 attestation은 이 head를 기준으로 이루어진다.
+
+## Finality: Casper FFG
+
+### Checkpoint와 Justification
+
+LMD-GHOST만으로는 finality가 없다. 새로운 attestation이 들어오면 fork choice가 바뀔 수 있다. **Casper FFG**는 checkpoint 기반의 finality를 제공한다.
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         Casper FFG Checkpoints                          │
+└─────────────────────────────────────────────────────────────────────────┘
+
+  Epoch N-2         Epoch N-1         Epoch N           Epoch N+1
+  ────┬─────────────────┬─────────────────┬─────────────────┬────
+      │                 │                 │                 │
+      ▼                 ▼                 ▼                 ▼
+  Checkpoint         Checkpoint       Checkpoint       Checkpoint
+   (block at         (block at        (block at        (block at
+    slot 0)           slot 0)          slot 0)          slot 0)
+
+  Checkpoint = 각 epoch의 첫 번째 slot에 있는 블록 (또는 가장 가까운 조상)
+```
+
+**Justification:** checkpoint가 총 스테이크의 2/3 이상의 지지를 받으면 "justified" 상태가 된다.
+
+**Finalization:** justified checkpoint가 다음 epoch에서도 2/3 이상의 지지를 받으면 "finalized" 상태가 된다.
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    Justification and Finalization                       │
+└─────────────────────────────────────────────────────────────────────────┘
+
+  Epoch N-2          Epoch N-1          Epoch N           Epoch N+1
+     │                  │                  │                  │
+     ▼                  ▼                  ▼                  ▼
+  ┌──────┐          ┌──────┐          ┌──────┐          ┌──────┐
+  │  CP  │──────────│  CP  │──────────│  CP  │──────────│  CP  │
+  └──────┘  2/3+    └──────┘  2/3+    └──────┘  2/3+    └──────┘
+  finalized ◄────── justified ◄────── justified         target
+
+  Finality 달성 과정:
+  1. Epoch N: CP(N-1)이 2/3 투표 → CP(N-1) justified
+  2. Epoch N+1: CP(N)이 2/3 투표 → CP(N) justified
+                                  → CP(N-1) finalized!
+
+  - Finalized 블록은 절대 되돌릴 수 없음
+  - 되돌리려면 1/3 이상의 스테이크가 slashing 당해야 함
+  - 일반적으로 2 epoch (약 13분) 후 finality 달성
+```
+
+### Gasper = LMD-GHOST + Casper FFG
+
+이더리움의 합의 프로토콜은 **Gasper**라고 불린다. LMD-GHOST로 실시간 fork choice를 하고, Casper FFG(Friendly Finality Gadget)로 finality를 확보한다.
+
+Gasper는 LMD-GHOST와 Casper FFG를 결합한 합의 구조이다.
+- **LMD-GHOST (Fork Choice):** 매 slot마다 head를 결정하며, 최신 attestation을 기반으로 빠른 블록 확인(optimistic confirmation)을 제공한다.
+- **Casper FFG (Finality):** Epoch 경계에서 checkpoint를 finalize한다. 2/3 supermajority가 필요하며, 되돌릴 수 없는 확정성을 제공한다.
+
+
+### Finality 지연
+
+네트워크 파티션이나 대규모 validator 오프라인 시 finality가 지연될 수 있다. 이 경우 **inactivity leak**이 발동한다.
+
+- Finality가 4 epoch 이상 지연되면 Inactivity Leak가 발동한다.
+- 오프라인 validator의 스테이크를 점진적으로 줄여 온라인 validator의 상대적 지분을 높인다.
+- 결국 2/3 supermajority를 회복해 finality를 재개한다.
+- 목적은 1/3 이상이 오프라인이어도 체인이 멈추지 않게 하고, 오프라인이 길어질수록 더 큰 페널티를 부과하는 데 있다.
+
+## Slashing
+
+### Slashable Offense
+
+validator가 프로토콜을 위반하면 스테이크의 일부가 소각된다. 이를 **slashing**이라고 한다.
+
+1. **Double Voting (Proposer):** 같은 slot에 서로 다른 블록을 제안
+   - 예: Slot 100에서 Block A와 Block B를 모두 서명
+2. **Double Voting (Attester):** 같은 epoch에 서로 다른 target에 투표
+   - 예: Attestation 1은 Checkpoint A, Attestation 2는 Checkpoint B
+3. **Surround Voting:** 기존 투표를 시간 범위로 “감싸는” 투표
+   - 예: (source=5, target=10) 이후 (source=4, target=11) 투표
+   - 또는 그 반대의 경우도 위반으로 간주
+
+### Slashing 페널티
+
+slashing 당한 validator는 세 가지 페널티를 받는다.
+
+1. **Initial Penalty (즉시)**
+   - 유효 잔액의 1/32 소각
+   - 32 ETH 기준: ~1 ETH
+2. **Correlation Penalty (36일 후)**
+   - 같은 기간 slashing된 다른 validator 수에 비례
+   - 최악의 경우 전체 잔액 소각 가능
+   - 공식: `(slashed_validators / total_validators) × 3 × balance`
+3. **퇴출 지연**
+   - 약 36일간 validator로 활동 불가
+   - 이 기간 동안 보상 없음, inactivity penalty 적용
+
+Correlation Penalty의 의도는 다음과 같다.
+- 단일 실수: 작은 페널티
+- 조직적 공격: 매우 큰 페널티
+- 클라이언트 버그로 인한 대량 slashing도 큰 페널티 → 클라이언트 다양성 유도
+
+### Whistleblower 보상
+
+slashing 증거를 제출한 validator(whistleblower)는 보상을 받는다.
+
+- slashed validator의 초기 페널티 중 일부
+- Proposer도 일부 보상 (블록에 slashing 포함)
+
+이 인센티브 구조로 네트워크가 위반 행위를 자체적으로 감시하고, 악의적 행위의 발각 확률을 증가시키는 효과를 얻을 수 있다.
+
+## Engine API
+
+[첫 번째 글](./01-architecture-overview.mdx)에서 Engine API를 간략히 소개했다. 여기서는 합의 과정에서의 실제 통신 흐름을 살펴본다.
+
+### 주요 메서드
+
+Engine API의 핵심 메서드는 다음과 같다.
+
+1. **engine_forkchoiceUpdatedV3**  
+   CL → EL: "현재 head/safe/finalized는 이것이다."  
+   블록 빌딩을 요청할 때는 `payloadAttributes`(timestamp, prevRandao, feeRecipient, withdrawals 등)를 함께 보낸다.
+2. **engine_getPayloadV3**  
+   CL → EL: "준비된 블록을 달라."  
+   EL → CL: `ExecutionPayload`를 반환한다.
+3. **engine_newPayloadV3**  
+   CL → EL: "이 블록을 검증해달라."  
+   EL은 블록을 실행하고 `VALID/INVALID/SYNCING` 결과를 돌려준다.
+
+### 블록 제안 시퀀스
+
+validator가 proposer로 선정되었을 때의 통신 흐름이다.
+
+1. CL이 `forkchoiceUpdated`를 보내고 `payloadAttributes`로 블록 빌딩을 요청한다.
+2. EL이 블록 빌딩을 시작하고 `payloadId`를 반환한다.
+3. CL이 `getPayload(payloadId)`를 호출해 `ExecutionPayload`를 받는다.
+4. CL이 `ExecutionPayload`를 포함한 BeaconBlock을 구성한다.
+5. 블록을 서명하고 네트워크에 브로드캐스트한다.
+
+### 블록 검증 시퀀스
+
+다른 validator가 제안한 블록을 받았을 때의 흐름이다.
+
+1. CL이 네트워크에서 새 블록을 받고 합의 레벨 검증(서명, slot, proposer 등)을 한다.
+2. CL이 `newPayload(ExecutionPayload)`로 EL에 실행 검증을 요청한다.
+3. EL이 트랜잭션 실행과 stateRoot 검증을 수행하고 `VALID/INVALID`를 반환한다.
+4. CL이 `forkchoiceUpdated`로 새 head를 EL에 반영한다.
+
+### Optimistic Sync
+
+Execution Layer가 아직 동기화 중일 때, Consensus Layer는 **optimistic sync** 모드로 동작할 수 있다. EL 검증 없이 CL 합의를 따라가다가, EL 동기화가 완료되면 검증을 수행한다.
+
+- CL이 EL보다 빠르게 동기화된다.
+- EL이 `SYNCING`을 반환하면 CL은 블록을 일단 수용한다.
+- 해당 블록을 finalized로 취급하지는 않는다.
+- EL 동기화가 끝나면 전체 검증을 수행한다.
+
+## 네트워크 업그레이드 히스토리
+
+이더리움은 정기적인 하드포크를 통해 프로토콜을 업그레이드해왔다.
+
+### 주요 하드포크
+
+| 시기    | 업그레이드         | 주요 내용 |
+|---------|--------------------|----------|
+| 2015.07 | Frontier           | 이더리움 메인넷 런칭 |
+| 2016.03 | Homestead          | 첫 번째 계획된 업그레이드 |
+| 2016.07 | DAO Fork           | The DAO 해킹 대응 (논쟁적) |
+| 2017.10 | Byzantium          | zk-SNARKs 지원, 난이도 조정 |
+| 2019.02 | Constantinople     | 가스비 최적화, CREATE2 |
+| 2019.12 | Istanbul           | CHAINID opcode, 가스비 조정 |
+| 2021.04 | Berlin             | EIP-2929 (가스비 조정), EIP-2930 (Access List) |
+| 2021.08 | London             | EIP-1559 (수수료 메커니즘 개편) |
+| 2022.09 | Paris (Merge)      | PoW → PoS 전환 |
+| 2023.04 | Shanghai/Capella   | Validator 출금 활성화 |
+| 2024.03 | Dencun             | EIP-4844 (Blob transactions) |
+
+### EIP-1559의 영향
+
+London 업그레이드의 EIP-1559는 수수료 메커니즘을 근본적으로 바꿨다.
+
+- **Before (First-price auction):**
+  - gasPrice를 높게 설정할수록 우선 처리
+  - 모든 수수료가 miner에게
+  - 가격 변동성 높음
+- **After (EIP-1559):**
+  - baseFee: 프로토콜이 결정하고 소각
+  - priorityFee: 사용자가 설정하고 validator에게 지급
+  - baseFee가 블록 사용량에 따라 자동 조정
+  - 수수료 예측 용이, ETH 공급량 감소 효과
+
+### 향후 로드맵
+
+- **Pectra (2025년 5월 완료):**
+  - EIP-7702: EOA가 스마트 컨트랙트 코드를 임시 실행 가능
+  - EIP-7251: MaxEB 증가 (32 ETH → 2048 ETH), validator 통합 가능
+  - EIP-7691: Blob 처리량 2배 증가 (블록당 평균 3개 → 6개)
+- **Fusaka (2025년 12월 완료):**
+  - PeerDAS: P2P 데이터 가용성 샘플링으로 Danksharding의 첫 단계 구현
+  - 블록 가스 한도 60M으로 증가, L2 수수료 40-60% 절감
+  - EOF(EVM Object Format)는 복잡성 우려로 제외됨
+- **Glamsterdam / Hegota (2026년 예정):**
+  - Glamsterdam: ePBS, access list 최적화, 가스 재조정
+  - Hegota: Verkle Trees 도입으로 stateless client 가능
+  - MPT → Verkle Trie 전환으로 상태 증명 크기 최대 90% 감소
+- **Single Slot Finality (SSF):**
+  - 현재: 2 epoch (~13분) finality
+  - 목표: 1 slot (12초) finality
+  - 기술적 도전 과제 다수
+- **Danksharding:**
+  - EIP-4844의 완전한 형태
+  - 데이터 가용성 대폭 확장
+  - L2 비용 추가 절감
+
+## 정리
+
+이 글에서는 이더리움의 합의 메커니즘을 살펴보았다.
+
+1. **PoW에서 PoS로:** The Merge를 통해 에너지 효율적이고 경제적으로 안전한 합의 메커니즘으로 전환했다.
+2. **Gasper 프로토콜:** LMD-GHOST로 빠른 블록 확인을, Casper FFG로 결정론적 finality를 제공한다.
+3. **Validator의 역할:** 32 ETH를 스테이킹하고, 블록 제안과 attestation을 통해 네트워크 보안에 기여한다. 프로토콜 위반 시 slashing으로 경제적 페널티를 받는다.
+4. **Engine API:** Execution Layer와 Consensus Layer가 분리되어 통신하며, 이 구조가 클라이언트 다양성을 가능하게 한다.
+
+## 참조
+
+- [Ethereum.org - Proof of Stake](https://ethereum.org/developers/docs/consensus-mechanisms/pos/)
+- [Ethereum.org - The Merge](https://ethereum.org/roadmap/merge/)
+- [Gasper Paper (Combining GHOST and Casper)](https://arxiv.org/abs/2003.03052)
+- [Ethereum Consensus Specs](https://github.com/ethereum/consensus-specs)
+- [Engine API Specification](https://github.com/ethereum/execution-apis/tree/main/src/engine)
+- [Ethereum.org - Attestations](https://ethereum.org/developers/docs/consensus-mechanisms/pos/attestations/)
+- [Ethereum.org - Rewards and Penalties](https://ethereum.org/developers/docs/consensus-mechanisms/pos/rewards-and-penalties/)

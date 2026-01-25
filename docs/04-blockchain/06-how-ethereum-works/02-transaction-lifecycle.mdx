@@ -1,0 +1,670 @@
+---
+title: 2. Transaction Lifecycle
+description: "How Ethereum transactions are created, signed, encoded with RLP, and propagated through the P2P network to the mempool"
+keywords: [Ethereum, geth, transaction, ECDSA, RLP, devp2p, mempool, txpool, EIP-1559, EIP-4844]
+tags: [Ethereum, EVM]
+sidebar_position: 2
+---
+
+# 2. Transaction Lifecycle
+
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+사용자가 지갑에서 "전송" 버튼을 누르면, 트랜잭션이 생성되어 블록에 포함되기까지 여러 단계를 거친다. 이 글에서는 트랜잭션의 구조, 서명 과정, 직렬화, 네트워크 전파, 그리고 mempool의 동작 원리를 살펴본다.
+
+## 트랜잭션의 여정
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                          Transaction Lifecycle                           │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────┐  ┌──────────────────────┐  ┌──────────────────────┐
+│      User Wallet     │  │     P2P Network      │  │       Mempool        │
+├──────────────────────┤  ├──────────────────────┤  ├──────────────────────┤
+│ 1. Create            │  │ 4. Broadcast         │  │ 5. Validate & Store  │
+│ 2. Sign (ECDSA)      │  │ (gossip)             │  │ pending / queued     │
+│ 3. Serialize (RLP)   │  │ Node A -> B -> C     │  │                      │
+│                      │  │ ...  ...  ...        │  │                      │
+└──────────────────────┘  └──────────────────────┘  └──────────────────────┘
+```
+
+사용자가 트랜잭션을 생성하면, 지갑은 다음 과정을 거친다.
+
+1. **트랜잭션 생성:** nonce, gas, to, value, data 등 필드 설정
+2. **서명:** ECDSA로 트랜잭션에 서명하여 소유권 증명
+3. **직렬화:** RLP 인코딩으로 바이트 배열 생성
+4. **전파:** P2P 네트워크를 통해 노드들에게 gossip
+5. **저장:** 각 노드의 mempool에 저장되어 블록 포함 대기
+
+이 과정을 이해하면 트랜잭션 실패 원인 분석, 가스 최적화, MEV 이해에 도움이 된다.
+
+## 트랜잭션 유형
+
+이더리움은 EIP-2718(Typed Transaction Envelope) 도입 이후 여러 트랜잭션 유형을 지원한다. 각 유형은 첫 번째 바이트로 구분된다.
+
+### Type 0: Legacy Transaction
+
+이더리움 초기부터 사용된 기본 형태이다. EIP-155 이전에는 replay attack에 취약했으나, chain ID 도입으로 해결되었다.
+
+```ts title="scripts/ethereum/transaction-types.ts"
+const tx: ethers.TransactionRequest = {
+  type: 0,
+  to: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+  value: ethers.parseEther("0.1"),
+  nonce: 0,
+  gasLimit: 21000,
+  gasPrice: ethers.parseUnits("20", "gwei"),
+  chainId: 1, // Mainnet
+  data: "0x",
+};
+```
+
+Legacy 트랜잭션의 가스 가격은 `gasPrice` 하나로 결정된다. 네트워크가 혼잡해지면 가스 가격을 높여 경쟁해야 했고, 이는 가격 변동성을 키웠다.
+
+### Type 2: EIP-1559 Transaction
+
+2021년 London 업그레이드에서 도입된 현재 표준 형식이다. 가스비를 `baseFee`와 `priorityFee`로 분리하여 수수료 예측성을 높였다.
+
+```ts title="scripts/ethereum/transaction-types.ts"
+const tx: ethers.TransactionRequest = {
+  type: 2,
+  to: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+  value: ethers.parseEther("0.1"),
+  nonce: 1,
+  gasLimit: 21000,
+  maxFeePerGas: ethers.parseUnits("30", "gwei"),
+  maxPriorityFeePerGas: ethers.parseUnits("2", "gwei"),
+  chainId: 1,
+  data: "0x",
+};
+```
+
+가스비는 다음과 같이 계산된다.
+
+```
+effectiveFee = min(maxFeePerGas, baseFee + maxPriorityFeePerGas)
+```
+
+예를 들어 `maxFeePerGas`가 30 gwei, `maxPriorityFeePerGas`가 2 gwei이고 현재 `baseFee`가 15 gwei라면, 실제 지불 가스비는 min(30, 15 + 2) = 17 gwei이다. 이 중 baseFee(15 gwei)는 소각되고, priorityFee(2 gwei)는 validator에게 지급된다.
+
+`maxFeePerGas`는 지불할 의사가 있는 최대 금액이므로, baseFee가 갑자기 올라도 트랜잭션이 실패하지 않는다.
+
+### Type 1: Access List Transaction
+
+EIP-2930에서 도입된 형식으로, 접근할 스토리지 슬롯을 미리 선언하여 가스를 절약할 수 있다.
+
+```ts title="scripts/ethereum/transaction-types.ts"
+const tx: ethers.TransactionRequest = {
+  type: 1,
+  to: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+  value: ethers.parseEther("0.1"),
+  nonce: 2,
+  gasLimit: 50000,
+  gasPrice: ethers.parseUnits("20", "gwei"),
+  chainId: 1,
+  accessList: [
+    {
+      address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", // WETH
+      storageKeys: [
+        "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "0x0000000000000000000000000000000000000000000000000000000000000001",
+      ],
+    },
+  ],
+};
+```
+
+EIP-2929 이후 cold storage access(처음 접근)는 2100 gas, warm access(이미 접근한 슬롯)는 100 gas가 든다. access list에 미리 선언하면 cold access 비용을 줄일 수 있다.
+
+### Type 3: Blob Transaction (EIP-4844)
+
+2024년 Dencun 업그레이드에서 도입된 blob 트랜잭션은 L2 롤업의 데이터 가용성 비용을 획기적으로 낮춘다.
+
+```
+Blob Transaction Fields:
+  - type: 3
+  - chainId, nonce, to, value, data (EIP-1559와 동일)
+  - maxFeePerGas, maxPriorityFeePerGas (EIP-1559와 동일)
+  - maxFeePerBlobGas: blob 공간에 대한 최대 수수료
+  - blobVersionedHashes: blob 데이터에 대한 commitment
+
+Blob Specifications:
+  - 각 blob: 4096 field elements × 32 bytes = 128 KiB
+  - 트랜잭션당 최대 6개 blob
+  - 블록당 목표 3개 blob
+  - blob 데이터는 약 18일 후 pruning
+```
+
+Blob은 별도의 가스 시장을 갖는다. calldata로 데이터를 올리는 것보다 10~100배 저렴하여, Dencun 업그레이드 이후 Base, Arbitrum 등 L2의 수수료가 크게 낮아졌다.
+
+### 트랜잭션 유형 비교
+
+| Type | 이름        | 가스 필드                     | 용도                |
+|------|-------------|-------------------------------|---------------------|
+| 0    | Legacy      | gasPrice                      | 기본 전송           |
+| 1    | Access List | gasPrice + accessList         | 스토리지 접근 최적화 |
+| 2    | EIP-1559    | maxFee + maxPriorityFee       | 현재 표준           |
+| 3    | Blob        | EIP-1559 + maxFeePerBlobGas   | L2 데이터 포스팅    |
+
+## 트랜잭션 서명
+
+트랜잭션 서명은 "이 트랜잭션이 해당 주소의 소유자가 보낸 것"임을 증명한다. 이더리움은 secp256k1 곡선 위에서 ECDSA(Elliptic Curve Digital Signature Algorithm)를 사용한다.
+
+ECDSA의 수학적 원리는 [이전 글](../05-cryptography/03-ecdsa.mdx)에서 자세히 다뤘으므로, 여기서는 트랜잭션 맥락에서의 서명 과정에 집중한다.
+
+### 서명 과정
+
+```
+┌───────────────────────────────────────────────────────────────────────────┐
+│                         Transaction Signing Process                       │
+└───────────────────────────────────────────────────────────────────────────┘
+
+Step 1: Create Unsigned Transaction
+  ┌────────────────────────────────────────┐
+  │ { chainId, nonce, maxPriorityFee,      │
+  │   maxFee, gasLimit, to, value, data,   │
+  │   accessList }                         │
+  └────────────────────────────────────────┘
+                    │
+                    ▼
+Step 2: Serialize & Hash
+  ┌────────────────────────────────────────┐
+  │ 0x02 || RLP([chainId, nonce, ...])     │ ─► keccak256 ─► Message Hash
+  └────────────────────────────────────────┘
+                    │
+                    ▼
+Step 3: ECDSA Sign
+  ┌────────────────────────────────────────┐
+  │ sign(messageHash, privateKey)          │ ─► (v, r, s)
+  └────────────────────────────────────────┘
+                    │
+                    ▼
+Step 4: Append Signature
+  ┌────────────────────────────────────────┐
+  │ 0x02 || RLP([chainId, nonce, ...,      │
+  │              v, r, s])                 │
+  └────────────────────────────────────────┘
+```
+
+```ts title="scripts/ethereum/transaction-signing.ts"
+// Create unsigned transaction
+const tx: ethers.TransactionRequest = {
+  type: 2,
+  to: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+  value: ethers.parseEther("1.0"),
+  nonce: 0,
+  gasLimit: 21000,
+  maxFeePerGas: ethers.parseUnits("30", "gwei"),
+  maxPriorityFeePerGas: ethers.parseUnits("2", "gwei"),
+  chainId: 1,
+};
+
+// Sign the transaction
+const signedTx = await wallet.signTransaction(tx);
+const parsed = Transaction.from(signedTx);
+
+console.log(`Message Hash: ${parsed.unsignedHash}`);
+// 0x92f8ea6d20e4198bca291b89f9aa67f52672bdba5a4d5017f83d96c93bdcfd5d
+
+const sig = parsed.signature!;
+console.log(`r: ${sig.r}`);
+// 0xbd2ca7c862745e82596cacce0cfa91ae48aacf42672ee780de717878f8e93288
+console.log(`s: ${sig.s}`);
+// 0x7ce519725313b047715c1d1dfa53a02c1210ff7402e7ea2d0cb5a4c80a47adba
+console.log(`v: ${sig.v}`);
+// 28
+```
+
+### v, r, s의 의미
+
+- **r:** ECDSA 서명 과정에서 생성된 임의의 점 R의 x 좌표
+- **s:** 서명 증명값 = k⁻¹ × (messageHash + r × privateKey) mod n
+- **v:** recovery id (0 또는 1) + offset. 공개키 복구에 사용
+
+v 값은 트랜잭션 유형에 따라 다르게 해석된다.
+- Legacy (pre-EIP-155): v = 27 또는 28
+- Legacy (EIP-155): v = chainId × 2 + 35 또는 36
+- EIP-1559: v = 0 또는 1 (yParity)
+
+### Sender 복구 (ecrecover)
+
+트랜잭션에는 `from` 필드가 없다. 대신 노드는 서명(v, r, s)과 메시지 해시로부터 sender 주소를 **복구**한다.
+
+```ts title="scripts/ethereum/transaction-signing.ts"
+const messageHash = parsed.unsignedHash;
+const signature = parsed.signature!;
+
+// Recover sender address from signature
+const recoveredAddress = recoverAddress(messageHash, signature);
+
+console.log(`Original Address:  ${wallet.address}`);
+console.log(`Recovered Address: ${recoveredAddress}`);
+console.log(`Match: ${wallet.address.toLowerCase() === recoveredAddress.toLowerCase()}`); // true
+```
+
+이것이 가능한 이유는 ECDSA의 수학적 특성 때문이다. v 값을 이용해 두 개의 가능한 공개키 중 올바른 것을 선택하고, r과 s로부터 공개키를 역산한다. 공개키가 복구되면 keccak256 해시의 마지막 20바이트로 주소를 도출한다.
+
+이 매커니즘을 통해 트랜잭션 크기가 줄어들고(from 필드 불필요), 개인키를 공개하지 않고도 소유권을 증명할 수 있으며, 누구나 트랜잭션의 sender를 검증할 수 있다.
+
+### Chain ID와 Replay Protection
+
+EIP-155 이전에는 같은 서명이 모든 체인에서 유효했다. 이는 replay attack의 위험을 만들었다. 예를 들어 메인넷에서 전송한 트랜잭션을 공격자가 테스트넷이나 다른 EVM 체인에서 재사용할 수 있었다.
+
+```ts title="scripts/ethereum/transaction-signing.ts"
+// Sign same transaction for different chains
+const mainnetTx = await wallet.signTransaction({ ...baseTx, chainId: 1 });
+const sepoliaTx = await wallet.signTransaction({ ...baseTx, chainId: 11155111 });
+
+const mainnetParsed = Transaction.from(mainnetTx);
+const sepoliaParsed = Transaction.from(sepoliaTx);
+
+console.log("Mainnet (chainId: 1):");
+console.log(`  Unsigned Hash: ${mainnetParsed.unsignedHash}`);
+// 0x92f8ea6d20e4198bca291b89f9aa67f52672bdba5a4d5017f83d96c93bdcfd5d
+
+console.log("Sepolia (chainId: 11155111):");
+console.log(`  Unsigned Hash: ${sepoliaParsed.unsignedHash}`);
+// 0x2771327e597d921836ccc0363a72a1540fdf005ca6f707608e53cfba28428618
+```
+
+동일한 트랜잭션 내용이라도 chain ID가 다르면 메시지 해시가 달라진다. 따라서 서명도 완전히 달라지며, 한 체인의 서명은 다른 체인에서 무효하다.
+
+**주요 Chain ID**
+
+| 네트워크     | Chain ID |
+|--------------|----------|
+| Mainnet      | 1        |
+| Sepolia      | 11155111 |
+| Arbitrum One | 42161    |
+| Optimism     | 10       |
+| Base         | 8453     |
+| Polygon      | 137      |
+
+## RLP 인코딩
+
+RLP(Recursive Length Prefix)는 이더리움이 데이터를 직렬화하는 표준 방식이다. 트랜잭션, 블록 헤더, 계정 상태, 머클 트라이 노드 등 Execution Layer의 거의 모든 데이터가 RLP로 인코딩된다.
+
+### RLP의 설계 원칙
+
+RLP는 의도적으로 단순하게 설계되었다.
+
+- **두 가지 데이터 타입만 존재:** 바이트 배열(string)과 리스트
+- **타입 정보 없음:** 숫자인지 문자열인지 주소인지 구분하지 않음
+- **결정론적:** 동일한 입력은 항상 동일한 출력
+- **컴팩트:** 작은 데이터에 대한 오버헤드 최소화
+
+타입 정보가 없다는 것은 "0x1234"가 숫자 4660인지 바이트 배열 [0x12, 0x34]인지 RLP만 봐서는 알 수 없다는 의미이다. 해석은 애플리케이션(이더리움 프로토콜)이 담당한다.
+
+### 인코딩 규칙
+
+```ts title="scripts/ethereum/rlp-encoding.ts"
+import { encodeRlp, decodeRlp } from "ethers";
+
+// Rule 1: Single byte [0x00, 0x7f] → itself
+// 0x42 encodes to 0x42
+
+// Rule 2: String 0-55 bytes → 0x80 + length + string
+const shortString = "hello"; // 5 bytes
+// Prefix: 0x85 (0x80 + 5)
+// Output: 0x8568656c6c6f
+
+// Rule 3: String > 55 bytes → 0xb7 + len(length) + length + string
+const longString = "a".repeat(100);
+// Prefix: 0xb8 (0xb7 + 1), then 0x64 (100)
+// Output: 0xb864616161...
+
+// Rule 4: List 0-55 bytes payload → 0xc0 + payload length + items
+const list = ["cat", "dog"];
+// Payload: 0x83"cat" + 0x83"dog" = 8 bytes
+// Prefix: 0xc8 (0xc0 + 8)
+// Output: 0xc88363617483646f67
+
+// Rule 5: List > 55 bytes payload → 0xf7 + len(length) + length + items
+```
+
+| Prefix Range  | 타입                  | 설명                          |
+|---------------|-----------------------|-------------------------------|
+| [0x00, 0x7f]  | 단일 바이트           | 자기 자신이 인코딩            |
+| [0x80, 0xb7]  | 문자열 (0-55 bytes)   | 0x80 + 길이                   |
+| [0xb8, 0xbf]  | 문자열 (>55 bytes)    | 0xb7 + 길이의길이 + 길이      |
+| [0xc0, 0xf7]  | 리스트 (0-55 bytes)   | 0xc0 + 페이로드길이           |
+| [0xf8, 0xff]  | 리스트 (>55 bytes)    | 0xf7 + 길이의길이 + 길이      |
+
+### 트랜잭션 RLP 구조
+
+```mdx-code-block
+<Tabs>
+<TabItem value="Legacy (Type 0)">
+```
+
+```
+RLP([nonce, gasPrice, gasLimit, to, value, data, v, r, s])
+```
+
+```mdx-code-block
+</TabItem>
+<TabItem value="EIP-1559 (Type 2)">
+```
+
+```
+0x02 || RLP([chainId, nonce, maxPriorityFeePerGas, maxFeePerGas,
+             gasLimit, to, value, data, accessList, v, r, s])
+```
+
+```mdx-code-block
+</TabItem>
+</Tabs>
+```
+
+EIP-1559 이후 트랜잭션은 타입 바이트(0x02)가 앞에 붙고, 그 뒤에 RLP 인코딩된 필드들이 온다.
+
+### Raw Transaction 파싱
+
+서명된 raw transaction을 분해하면 다음과 같다.
+
+```
+Raw: 0x02f873010184773594008506fc23ac008252089470997970...
+
+Breakdown:
+  0x02          - Type 2 (EIP-1559)
+  f873          - RLP list prefix (0xf8 + 0x73 bytes)
+  01            - chainId (1)
+  01            - nonce (1)
+  84 77359400   - maxPriorityFeePerGas (2 gwei)
+  85 06fc23ac00 - maxFeePerGas (30 gwei)
+  82 5208       - gasLimit (21000)
+  94 70997970...  - to address (20 bytes)
+  88 0de0b6b3... - value
+  80            - data (empty)
+  c0            - accessList (empty list)
+  01            - v (yParity)
+  a0 bd2ca7c8...  - r (32 bytes)
+  a0 7ce51972...  - s (32 bytes)
+```
+
+:::info Consensus Layer는 SSZ를 사용한다
+RLP는 Execution Layer의 표준이다. [이전 글](./01-architecture-overview.mdx)에서 설명했듯이 Consensus Layer는 별도의 직렬화 포맷인 SSZ(Simple Serialize)를 사용한다. SSZ는 고정 크기 타입을 지원하고 머클화(merkleization)에 최적화되어 있어 라이트 클라이언트 증명에 유리하다.
+:::
+
+## P2P 네트워크와 전파
+
+서명되고 직렬화된 트랜잭션은 네트워크로 전파되어야 한다. 이더리움의 P2P 네트워크는 devp2p 프로토콜을 기반으로 한다.
+
+### 네트워크 아키텍처
+
+[이전 글](./01-architecture-overview.mdx)에서 설명했듯이, 이더리움 노드는 두 개의 독립적인 P2P 네트워크를 운영한다.
+
+```
+┌───────────────────────────────────────────────────────────────────────────┐
+│                           Ethereum P2P Networks                           │
+├───────────────────────────────────┬───────────────────────────────────────┤
+│        Execution Layer P2P        │        Consensus Layer P2P            │
+├───────────────────────────────────┼───────────────────────────────────────┤
+│  Protocol: devp2p (eth/68)        │  Protocol: libp2p                     │
+│  Transport: TCP                   │  Transport: TCP                       │
+│  Discovery: discv4/discv5         │  Discovery: discv5                    │
+│                                   │                                       │
+│  Messages:                        │  Topics:                              │
+│  - Transactions                   │  - beacon_block                       │
+│  - Block headers/bodies           │  - beacon_aggregate_and_proof         │
+│  - State data (snap sync)         │  - voluntary_exit                     │
+│                                   │  - proposer_slashing                  │
+│                                   │  - attester_slashing                  │
+└───────────────────────────────────┴───────────────────────────────────────┘
+```
+
+트랜잭션 전파는 Execution Layer P2P 네트워크에서 일어난다.
+
+### 노드 발견 (Discovery)
+
+새 노드가 네트워크에 참여하려면 먼저 다른 노드들을 찾아야 한다. 이더리움은 discv5 프로토콜을 사용한다.
+
+1. **Bootstrap nodes:** 하드코딩된 초기 노드 목록으로 시작
+2. **Kademlia DHT:** 노드 ID 기반 분산 해시 테이블로 피어 탐색
+3. **ENR (Ethereum Node Records):** 노드의 공개키, IP, 포트, 지원 프로토콜 등 메타데이터
+
+### 트랜잭션 Gossip
+
+트랜잭션은 gossip 프로토콜로 전파된다. 한 노드가 트랜잭션을 받으면 연결된 피어들에게 전달하고, 이 과정이 반복되어 네트워크 전체로 퍼진다.
+
+#### 전파 흐름
+
+1. 사용자는 지갑에서 트랜잭션을 만들고, 보통 로컬 노드(JSON-RPC)로 전송한다.
+2. 노드는 기본 검증을 수행한 뒤 txpool에 넣고, 피어들에게 **해시를 먼저 알린다**.
+3. 피어는 해시를 보고 필요한 경우에만 **본문을 요청**한다.
+4. 본문을 받은 피어는 같은 과정을 반복해 네트워크로 확산시킨다.
+
+이더리움의 eth/66+ 프로토콜에서는 해시 알림(`NewPooledTransactionHashes`)과 본문 요청/응답(`GetPooledTransactions`/`PooledTransactions`)을 분리해 전파 비용을 줄인다.
+
+#### 검증과 필터링
+
+모든 트랜잭션이 그대로 전파되는 것은 아니다. 노드는 다음을 확인하고 통과한 것만 받아들인다.
+
+- 서명 유효성, 체인 ID, 형식 검사
+- nonce와 잔액 조건(현재 상태 기준)
+- 가스/수수료 필드의 합리성(최소 수수료, 크기 제한 등)
+
+검증에 실패한 트랜잭션은 전파되지 않는다. 스팸을 줄이기 위해 피어별 전파 속도 제한, 중복 제거, 유사 트랜잭션 우선순위 조정이 함께 동작한다.
+
+```
+Node A receives tx
+    │
+    ├──► Node B ──► Node D ──► ...
+    │        └──► Node E ──► ...
+    │
+    └──► Node C ──► Node F ──► ...
+             └──► Node G ──► ...
+```
+
+전파를 최적화하기 위해 다음 기법들이 사용된다.
+
+- **Transaction Announcement:** 전체 트랜잭션 대신 해시만 먼저 전송
+- **Deduplication:** 이미 본 트랜잭션은 재전파하지 않음
+- **Square Root Propagation:** √n 개의 피어에게만 전체 데이터 전송, 나머지는 해시만
+
+EIP-2976에서 타입별 트랜잭션 gossip을 표준화했다. 네트워크 메시지는 `TransactionType || TransactionPayload` 형식으로 전송된다.
+
+## Mempool (txpool)
+
+Mempool(또는 txpool)은 아직 블록에 포함되지 않은 pending 트랜잭션들이 대기하는 공간이다. 각 노드는 자체 mempool을 운영하며, 이들이 합쳐져 "글로벌 mempool"을 형성한다.
+
+### Pending vs Queued
+
+geth의 txpool은 두 개의 큐를 갖는다.
+
+```
+┌───────────────────────────────────────────────────────────────────────────┐
+│                                  txpool                                   │
+├───────────────────────────────────────┬───────────────────────────────────┤
+│                Pending                │               Queued              │
+├───────────────────────────────────────┼───────────────────────────────────┤
+│  Ready to be included in block        │  Not yet ready                    │
+│                                       │                                   │
+│  Requirements:                        │  Reasons:                         │
+│  - Valid signature                    │  - Nonce gap (missing previous tx)│
+│  - Nonce = account's current nonce    │  - Nonce too far in future        │
+│  - Sufficient balance for gas + val   │  - Balance insufficient           │
+│  - Gas price meets minimum            │                                   │
+│                                       │                                   │
+│  Sorted by:                           │  Waiting for:                     │
+│  - Effective gas price (descending)   │  - Gap to be filled               │
+│  - Nonce (ascending, per account)     │  - Balance to increase            │
+└───────────────────────────────────────┴───────────────────────────────────┘
+```
+
+**Pending**은 바로 블록에 포함될 수 있는 트랜잭션이다. nonce가 계정의 현재 nonce와 일치하고, 잔액이 충분해야 한다.
+
+**Queued**는 아직 실행 조건을 충족하지 못한 트랜잭션이다. 대표적인 원인은 nonce gap이다.
+
+```
+Account nonce: 5
+
+Pending: tx(nonce=5), tx(nonce=6), tx(nonce=7)
+Queued:  tx(nonce=10), tx(nonce=11)  ← nonce 8,9가 없어서 queued
+```
+
+nonce 8, 9인 트랜잭션이 도착하면 queued의 트랜잭션들이 pending으로 이동한다.
+
+### 트랜잭션 정렬
+
+블록 빌더는 pending 트랜잭션 중에서 가스 수익을 최대화하는 방향으로 선택한다.
+
+1. **Effective gas price** 내림차순 (EIP-1559의 경우 min(maxFee, baseFee + priorityFee))
+2. 같은 계정의 트랜잭션은 **nonce** 오름차순
+
+### 트랜잭션 교체
+
+같은 nonce로 새 트랜잭션을 보내면 기존 트랜잭션을 **교체**할 수 있다. 단, 가스 가격이 기존보다 최소 10% 이상 높아야 한다.
+
+```ts
+// Original transaction
+const tx1 = {
+  nonce: 0,
+  maxFeePerGas: parseUnits("20", "gwei"),
+  maxPriorityFeePerGas: parseUnits("2", "gwei"),
+  // ...
+};
+
+// Speed up: increase gas price by > 10%
+const tx2 = {
+  nonce: 0, // Same nonce
+  maxFeePerGas: parseUnits("25", "gwei"), // +25%
+  maxPriorityFeePerGas: parseUnits("3", "gwei"), // +50%
+  // ...
+};
+
+// Cancel: send 0 ETH to self with higher gas
+const cancelTx = {
+  nonce: 0, // Same nonce
+  to: myAddress, // To self
+  value: 0,
+  maxFeePerGas: parseUnits("25", "gwei"),
+  maxPriorityFeePerGas: parseUnits("3", "gwei"),
+};
+```
+
+### Eviction 정책
+
+mempool은 무한정 트랜잭션을 보관할 수 없다. geth의 기본 설정은 다음과 같다.
+
+- `globalSlots`: 4096 (pending 트랜잭션 최대 개수)
+- `globalQueue`: 1024 (queued 트랜잭션 최대 개수)
+- `accountSlots`: 16 (계정당 pending 최대)
+- `accountQueue`: 64 (계정당 queued 최대)
+- `lifetime`: 3시간 (queued 트랜잭션 최대 보관 시간)
+
+풀이 가득 차면 가스 가격이 가장 낮은 트랜잭션부터 제거된다.
+
+### txpool API
+
+geth는 txpool 상태를 조회하는 RPC API를 제공한다.
+
+```bash
+# Get txpool status
+curl -X POST --data '{
+  "jsonrpc":"2.0",
+  "method":"txpool_status",
+  "params":[],
+  "id":1
+}' http://localhost:8545
+
+# Response
+{
+  "pending": "0x10",  // 16 pending txs
+  "queued": "0x3"     // 3 queued txs
+}
+```
+
+```bash
+# Get detailed txpool content
+curl -X POST --data '{
+  "jsonrpc":"2.0",
+  "method":"txpool_content",
+  "params":[],
+  "id":1
+}' http://localhost:8545
+```
+
+## MEV와 Private Transaction
+
+Mempool은 공개되어 있다. 누구나 pending 트랜잭션을 볼 수 있고, 이는 MEV(Maximal Extractable Value) 추출의 기반이 된다.
+
+### MEV란
+
+MEV는 블록 생성자가 트랜잭션 순서를 조작하거나 자신의 트랜잭션을 삽입하여 얻을 수 있는 이익이다. 대표적인 전략으로는 front-running(큰 DEX 거래를 미리 알고 앞서 거래), back-running(큰 거래 직후 발생하는 가격 불균형 활용), sandwich attack(대상 거래의 앞뒤에 자신의 거래를 끼워넣기), liquidation(청산 가능한 포지션을 미리 감지하고 청산) 등이 있다.
+
+### Flashbots와 MEV-Boost
+
+Flashbots는 MEV로 인한 부작용을 줄이기 위해 번들 전송, 프라이빗 릴레이, 블록 빌딩 인프라를 제공하는 연구·개발 조직이다. 핵심은 공개 mempool 밖에서 번들/블록을 구성하고, 검증자에게 안전하게 전달하는 것이다.
+
+MEV-Boost는 Flashbots가 공개한 소프트웨어 중 하나로, PoS 이더리움에서 validator가 외부 블록 빌더로부터 블록을 받아 선택하도록 만드는 PBS(Proposer-Builder Separation) 구현체다.
+
+```
+┌──────────────┐    ┌──────────────┐    ┌──────────────┐
+│   Searcher   │───►│   Builder    │───►│   Proposer   │
+│  (MEV bot)   │    │ (builds blk) │    │ (validator)  │
+└──────────────┘    └──────────────┘    └──────────────┘
+      │                    │                    │
+      │  Bundle            │  Bid               │  Sign & Propose
+      │  (ordered txs)     │  (block + payment) │
+```
+
+1. **Searcher:** MEV 기회를 찾아 트랜잭션 번들 생성
+2. **Builder:** 여러 번들을 조합해 수익 극대화된 블록 생성
+3. **Proposer:** 가장 높은 bid의 블록 선택
+
+실제 흐름에서는 **Relay**가 추가된다. Builder는 Relay에 블록을 제출하고, Proposer(validator)는 MEV-Boost를 통해 여러 Relay에서 제안된 블록의 **수익성 있는 헤더**를 비교해 선택한다. 선택 후에만 블록 본문이 공개되므로, Proposer는 페이로드를 보기 전에는 내용을 알 수 없다(블라인드 빌딩).
+
+- **Searcher → Builder:** 번들 전달
+- **Builder → Relay:** 블라인드 블록 제출 및 입찰
+- **Proposer(validator) → Relay:** 최고 입찰 선택
+- **Relay → Proposer:** 본문(payload) 공개 후 서명/제안
+
+### Private Transaction
+
+공개 mempool을 피해 트랜잭션을 전송하는 방법도 있다.
+
+Flashbots Protect는 트랜잭션을 Flashbots의 private pool로 전송한다. front-running으로부터 보호되고, 추출된 MEV의 90%를 돌려받을 수 있다.
+
+```ts
+// Using Flashbots Protect RPC
+const provider = new JsonRpcProvider("https://rpc.flashbots.net");
+await provider.sendTransaction(signedTx);
+```
+
+Private 전송은 공개 mempool에 노출되지 않지만, **포함 보장**이 있는 것은 아니다. 네트워크 혼잡이나 빌더 정책에 따라 지연되거나 제외될 수 있다.
+
+2024년 11월, Flashbots는 BuilderNet을 출시했다. 이는 여러 빌더가 협력하여 블록을 생성하는 분산화된 빌딩 네트워크로, 중앙화된 빌더 의존을 줄이려는 시도이다.
+
+:::info MEV와 L2
+대부분의 고처리량 L2 체인(Arbitrum, Base, Optimism 등)은 sequencer가 트랜잭션 순서를 결정하므로, mempool이 private하다. 이는 front-running을 방지하지만, sequencer의 중앙화 문제를 야기한다.
+:::
+
+## 정리
+
+트랜잭션의 생명주기를 요약하면 다음과 같다.
+
+1. **생성:** nonce, gas, to, value, data 등 필드 설정
+2. **서명:** ECDSA로 서명하여 (v, r, s) 생성, sender는 서명에서 복구
+3. **직렬화:** RLP로 인코딩하여 raw transaction 생성
+4. **전파:** devp2p gossip으로 네트워크 전체에 전파
+5. **저장:** 각 노드의 mempool에서 블록 포함 대기
+6. **선택:** 블록 빌더가 가스 수익 기준으로 트랜잭션 선택
+
+[다음 글](./03-block-execution-state.mdx)에서는 mempool의 트랜잭션이 어떻게 블록에 포함되고, EVM에서 실행되어 상태가 변경되는지 살펴본다.
+
+글에서 사용된 예시코드는 [crypto-examples/solidity-examples](https://github.com/chihunmanse/crypto-examples/tree/main/solidity-examples/scripts/ethereum)에서 확인할 수 있다.
+
+## 참조
+
+- [Ethereum.org - Transactions](https://ethereum.org/developers/docs/transactions/)
+- [Ethereum.org - RLP Serialization](https://ethereum.org/developers/docs/data-structures-and-encoding/rlp/)
+- [EIP-155: Simple replay attack protection](https://eips.ethereum.org/EIPS/eip-155)
+- [EIP-1559: Fee market change](https://eips.ethereum.org/EIPS/eip-1559)
+- [EIP-2718: Typed Transaction Envelope](https://eips.ethereum.org/EIPS/eip-2718)
+- [EIP-4844: Shard Blob Transactions](https://eips.ethereum.org/EIPS/eip-4844)
+- [devp2p Specifications](https://github.com/ethereum/devp2p)
+- [geth txpool Namespace](https://geth.ethereum.org/docs/interacting-with-geth/rpc/ns-txpool)
+- [Flashbots Documentation](https://docs.flashbots.net/)

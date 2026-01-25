@@ -1,0 +1,381 @@
+---
+title: 1. Ethereum Architecture Overview
+description: "How Ethereum's dual-layer architecture works after The Merge - Execution Layer, Consensus Layer, and client diversity"
+keywords: [Ethereum, geth, The Merge, Execution Layer, Consensus Layer, Engine API, client diversity]
+tags: [Ethereum]
+sidebar_position: 1
+---
+
+# 1. Ethereum Architecture Overview
+
+2022년 The Merge 이후 이더리움의 구조는 근본적으로 변화했다. 단일 클라이언트가 모든 것을 처리하던 방식에서 Execution Layer와 Consensus Layer가 분리된 이중 레이어 구조로 전환되었다.
+
+이 글에서는 왜 이런 구조적 변화가 필요했는지, 각 레이어가 어떤 역할을 담당하는지, 그리고 클라이언트 다양성이 왜 이더리움의 보안에 핵심적인지 살펴본다.
+
+## 이더리움의 설계 철학
+
+이더리움은 단순한 블록체인이 아니라 **World Computer**를 지향한다. 누구나 코드를 배포하고 실행할 수 있는 글로벌 컴퓨팅 플랫폼이라는 비전이다. 이 비전을 실현하기 위해 이더리움은 몇 가지 핵심 원칙을 따른다.
+
+**결정론적 실행(Deterministic Execution):** 동일한 입력에 대해 모든 노드가 동일한 결과를 도출해야 한다. 전 세계에 분산된 수천 개의 노드가 같은 상태에 합의하려면, 실행 결과가 노드마다 달라져서는 안 된다. 이것이 EVM이 난수 생성이나 외부 API 호출을 직접 지원하지 않는 이유이다.
+
+**탈중앙화(Decentralization):** 특정 주체가 네트워크를 통제할 수 없어야 한다. 이를 위해 누구나 노드를 운영할 수 있어야 하고, 노드 운영에 필요한 하드웨어 요구사항이 과도하게 높아서는 안 된다.
+
+**검열 저항(Censorship Resistance):** 유효한 트랜잭션은 결국 블록에 포함되어야 한다. 특정 주소나 특정 유형의 트랜잭션을 영구적으로 차단할 수 있는 주체가 없어야 한다.
+
+## The Merge 이전: 단일 클라이언트 구조
+
+2022년 9월 The Merge 이전, 이더리움은 Proof of Work(PoW) 합의 메커니즘을 사용했다. 이 시기의 아키텍처는 상대적으로 단순했다.
+
+```
+┌───────────────────────────────────────────────────────┐
+│                     Ethereum Node                     │
+│  ┌─────────────────────────────────────────────────┐  │
+│  │              geth (or other clients)            │  │
+│  │  ┌─────────────┐ ┌─────────────┐ ┌───────────┐  │  │
+│  │  │   Ethash    │ │     EVM     │ │    P2P    │  │  │
+│  │  │ (PoW cons.) │ │ (tx exec.)  │ │  Network  │  │  │
+│  │  └─────────────┘ └─────────────┘ └───────────┘  │  │
+│  └─────────────────────────────────────────────────┘  │
+└───────────────────────────────────────────────────────┘
+```
+
+geth 같은 단일 클라이언트가 합의(Ethash PoW), 실행(EVM), 네트워킹(P2P)을 모두 담당하는 모놀리식 구조였다. 마이너가 nonce를 찾아 블록을 생성하면, 다른 노드들이 해당 블록의 PoW를 검증하고 트랜잭션을 실행하여 상태를 업데이트했다.
+
+이 구조에는 몇 가지 문제가 있었다.
+
+**클라이언트 다양성 부족:** geth가 전체 노드의 80% 이상을 차지했다. 만약 geth에 심각한 버그가 발생하면 네트워크 전체가 위험에 빠질 수 있었다. 다른 클라이언트(OpenEthereum, Nethermind 등)도 존재했지만 점유율이 낮았고, 하나의 클라이언트가 합의와 실행을 모두 구현해야 했기에 새로운 클라이언트 개발 진입장벽이 높았다.
+
+**코드베이스 복잡도:** 합의 로직과 실행 로직이 하나의 코드베이스에 얽혀 있어 유지보수가 어려웠다. 합의 메커니즘을 변경하려면 실행 로직까지 영향을 받을 수 있었다.
+
+**PoS 전환의 어려움:** Proof of Stake로 전환하려면 합의 메커니즘을 완전히 교체해야 했다. 모놀리식 구조에서는 이 작업이 기존 코드 전체에 영향을 미칠 수 있어 위험했다.
+
+## The Merge 이후: 이중 레이어 구조
+
+```
+┌───────────────────────────────────────────────────────────────────┐
+│                          Ethereum Node                            │
+│  ┌─────────────────────────────┐ ┌─────────────────────────────┐  │
+│  │    Consensus Layer (CL)     │ │    Execution Layer (EL)     │  │
+│  │  ┌───────────────────────┐  │ │  ┌───────────────────────┐  │  │
+│  │  │     Beacon Chain      │  │ │  │         EVM           │  │  │
+│  │  │  - PoS Consensus      │  │ │  │  - Tx Execution       │  │  │
+│  │  │  - Validator Mgmt     │◄─┼─┼─►│  - State Management   │  │  │
+│  │  │  - Finality           │  │ │  │  - Mempool            │  │  │
+│  │  │  - Fork Choice        │  │ │  │  - Block Body         │  │  │
+│  │  └───────────────────────┘  │ │  └───────────────────────┘  │  │
+│  │             │               │ │             │               │  │
+│  │      CL P2P Network         │ │      EL P2P Network         │  │
+│  └─────────────────────────────┘ └─────────────────────────────┘  │
+│                          Engine API                               │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+### 분리한 이유
+
+**클라이언트 다양성과 독립적 발전:** 레이어를 분리하면 각 레이어에 특화된 클라이언트를 개발하기 쉬워진다. EL과 CL은 각자의 영역만 다루면 되고, 개선도 해당 레이어에서만 진행하면 된다. 서로의 구현에 영향을 덜 받으므로 안정적으로 발전할 수 있다.
+
+**명확한 책임:** 버그가 발생했을 때 합의 문제인지 실행 문제인지 빠르게 파악할 수 있다. 디버깅과 유지보수가 용이해진다.
+
+### Execution Layer의 역할
+
+Execution Layer는 이더리움의 "컴퓨터" 부분을 담당한다.
+
+- **트랜잭션 실행:** EVM을 통해 스마트 컨트랙트 코드를 실행한다.
+- **상태 관리:** 계정 잔액, 컨트랙트 스토리지 등 World State를 관리한다.
+- **Mempool 운영:** 아직 블록에 포함되지 않은 pending 트랜잭션들을 보관한다.
+- **블록 바디 처리:** 트랜잭션 목록을 받아 실행하고 결과(receipts, state root)를 반환한다.
+
+기존 PoW 클라이언트(geth, Nethermind, Besu, Erigon)에서 합의 로직을 제거하고 Engine API를 추가한 것이 현재의 EL 클라이언트다.
+
+### Consensus Layer의 역할
+
+Consensus Layer는 이더리움의 "합의" 부분을 담당한다.
+
+- **PoS 합의:** Casper FFG와 LMD-GHOST를 결합한 Gasper 프로토콜을 실행한다.
+- **Validator 관리:** 32 ETH를 스테이킹한 validator들의 등록, 활성화, 퇴장을 관리한다.
+- **블록 제안 및 검증:** 각 slot(12초)마다 블록을 제안할 validator를 선정하고, 다른 validator들의 attestation을 수집한다.
+- **Finality 결정:** 충분한 attestation이 모이면 블록을 finalize하여 되돌릴 수 없게 만든다.
+- **Fork choice:** 여러 체인이 경쟁할 때 어떤 체인이 정당한지 결정한다.
+
+Beacon Chain 클라이언트(Lighthouse, Prysm, Teku, Nimbus, Lodestar)가 CL 역할을 담당한다.
+
+### 두 레이어의 통신 구조
+
+흥미로운 점은 두 레이어의 P2P 네트워크가 완전히 분리되어 있다는 것이다. CL 노드는 다른 CL 노드들과만 통신하고, EL 노드는 다른 EL 노드들과만 통신한다. 두 레이어 간의 통신은 오직 **로컬 RPC**를 통해서만 이루어진다.
+
+```
+        Internet                              Internet
+           │                                     │
+     ┌─────┴─────┐                         ┌─────┴─────┐
+     │  CL P2P   │                         │  EL P2P   │
+     │  Network  │                         │  Network  │
+     └─────┬─────┘                         └─────┬─────┘
+           │                                     │
+┌──────────┴─────────────────────────────────────┴──────────┐
+│                        Local Node                         │
+│  ┌───────────────┐                     ┌───────────────┐  │
+│  │      CL       │  Engine API (JWT)   │      EL       │  │
+│  │    (Prysm,    │◄───────────────────►│    (geth,     │  │
+│  │  Lighthouse)  │     localhost       │     Reth)     │  │
+│  └───────────────┘                     └───────────────┘  │
+└───────────────────────────────────────────────────────────┘
+```
+
+이 설계의 장점은 다음과 같다.
+- **보안:** EL과 CL 간의 통신이 외부에 노출되지 않는다.
+- **유연성:** EL 클라이언트와 CL 클라이언트를 자유롭게 조합할 수 있다.
+- **일대다 구성 가능:** 하나의 CL이 여러 EL을 관리할 수 있다.
+
+## Engine API: EL ↔ CL 통신
+
+Engine API는 Consensus Layer가 Execution Layer를 제어하기 위한 JSON-RPC 인터페이스이다. CL이 "이 블록을 실행해봐", "새 블록을 만들어줘" 같은 명령을 EL에 내리는 통로이다.
+
+### 주요 메서드
+
+**`engine_forkchoiceUpdatedV3`:** 현재 체인의 head, safe, finalized 블록을 알려주고, 선택적으로 새 블록 빌딩을 시작한다.
+
+```json
+// Request
+{
+  "method": "engine_forkchoiceUpdatedV3",
+  "params": [
+    {
+      "headBlockHash": "0x3b8fb...",
+      "safeBlockHash": "0x3b8fb...",
+      "finalizedBlockHash": "0x2a8fb..."
+    },
+    {
+      "timestamp": "0x6489b2a0",
+      "prevRandao": "0x7c9fa...",
+      "suggestedFeeRecipient": "0x4200...",
+      "withdrawals": [],
+      "parentBeaconBlockRoot": "0x8d3fa..."
+    }
+  ]
+}
+
+// Response
+{
+  "payloadStatus": {
+    "status": "VALID",
+    "latestValidHash": "0x3b8fb..."
+  },
+  "payloadId": "0x0312..."
+}
+```
+
+**`engine_newPayloadV3`:** CL이 새로 받은 블록을 EL에 전달하여 검증을 요청한다.
+
+```json
+// Request
+{
+  "method": "engine_newPayloadV3",
+  "params": [
+    {
+      "parentHash": "0x3b8fb...",
+      "feeRecipient": "0x4200...",
+      "stateRoot": "0x9d3fa...",
+      "receiptsRoot": "0x7c4fb...",
+      "logsBloom": "0x0000...",
+      "prevRandao": "0x7c9fa...",
+      "blockNumber": "0x1234",
+      "gasLimit": "0x1c9c380",
+      "gasUsed": "0x5208",
+      "timestamp": "0x6489b2a0",
+      "extraData": "0x",
+      "baseFeePerGas": "0x7",
+      "blockHash": "0x4c8fb...",
+      "transactions": ["0x02f8..."],
+      "withdrawals": [],
+      "blobGasUsed": "0x0",
+      "excessBlobGas": "0x0"
+    },
+    ["0x7c9fa..."],  // expectedBlobVersionedHashes
+    "0x8d3fa..."     // parentBeaconBlockRoot
+  ]
+}
+
+// Response
+{
+  "status": "VALID",
+  "latestValidHash": "0x4c8fb...",
+  "validationError": null
+}
+```
+
+**`engine_getPayloadV3`:** 이전에 `forkchoiceUpdated`로 시작한 블록 빌딩의 결과물을 가져온다.
+
+### 통신 흐름
+
+매 slot(12초)마다 다음과 같은 흐름이 반복된다.
+
+```
+Time ─────────────────────────────────────────────────────────────►
+
+Slot N Start
+    │
+    ├─ CL: Check if proposer for this slot
+    │
+    ├─ [If Proposer]
+    │   ├─ CL → EL: engine_forkchoiceUpdatedV3 (start block building)
+    │   │           EL: Select transactions, start assembling block
+    │   │
+    │   └─ (~4s later) Block proposal time
+    │       ├─ CL → EL: engine_getPayloadV3
+    │       ├─ EL → CL: Return assembled block
+    │       └─ CL: Sign block and broadcast to network
+    │
+    ├─ [If Not Proposer]
+    │   └─ CL: Receive block from other nodes
+    │       ├─ CL → EL: engine_newPayloadV3 (verify block)
+    │       │           EL: Execute transactions, verify state
+    │       └─ EL → CL: VALID/INVALID response
+    │
+    └─ CL: Perform attestation (vote on block)
+
+Slot N End
+```
+
+먼저 CL은 해당 slot의 제안자(proposer)인지 확인한다. 제안자라면 CL이 EL에 `engine_forkchoiceUpdatedV3`를 보내 블록 빌딩을 시작시키고, EL은 mempool에서 트랜잭션을 골라 블록을 조립한다. 약 4초 뒤 제안 시점이 오면 CL이 `engine_getPayloadV3`로 완성된 payload를 받아 서명한 뒤 네트워크에 전파한다. 제안자가 아니라면, CL은 네트워크에서 다른 노드의 블록을 수신한 뒤 EL에 `engine_newPayloadV3`로 전달해 실행 검증을 요청한다. EL이 트랜잭션 실행과 상태 검증을 끝내면 `VALID/INVALID`로 결과를 돌려주고, CL은 이를 바탕으로 attestation(투표)을 수행한다.
+
+### PayloadStatus 응답
+
+EL은 블록 검증 결과를 다음 상태 중 하나로 응답한다.
+
+| Status | 의미 |
+|--------|------|
+| `VALID` | 블록이 유효함 |
+| `INVALID` | 블록이 무효함 (잘못된 상태 루트 등) |
+| `SYNCING` | EL이 아직 동기화 중이라 검증 불가 |
+| `ACCEPTED` | 블록 형식은 유효하나 부모 블록이 없어서 완전 검증 불가 |
+
+## 클라이언트 다양성
+
+이더리움의 보안은 기술적 설계뿐 아니라 **클라이언트 다양성**에도 크게 의존한다. 만약 전체 validator의 66% 이상이 같은 클라이언트를 사용하고, 그 클라이언트에 버그가 있다면 어떻게 될까?
+
+### 왜 다양성이 중요한가
+
+PoS에서 finality는 전체 stake의 2/3 이상이 같은 블록에 투표해야 달성된다. 만약 66% 이상의 validator가 사용하는 클라이언트에 합의 버그가 있다면:
+
+1. 버그가 있는 클라이언트들이 잘못된 블록에 투표
+2. 해당 블록이 finalize됨 (2/3 이상 투표)
+3. 이후 버그가 발견되어 수정
+4. 수정된 클라이언트 입장에서는 이전 finalized 블록이 invalid
+5. 슬래싱 발생: finalized 블록과 충돌하는 투표로 간주
+
+이 경우 해당 클라이언트를 사용한 validator는 상당한 stake 손실을 입을 수 있다. 네트워크가 멈추는 수준을 넘어 경제적 피해로 이어진다.
+
+반대로 33% 미만의 점유율을 가진 클라이언트에 버그가 있을 때는:
+- 해당 클라이언트 사용자만 일시적으로 오프라인이 됨
+- 네트워크는 나머지 67%로 계속 운영됨
+- 수정 후 정상 복귀
+
+따라서 **모든 클라이언트가 33% 미만의 점유율을 유지해야 한다**는 결론이 나온다.
+
+실제 사례로, 2025년 초 Reth 클라이언트의 버그로 전체 노드의 약 5.4%가 일시적으로 영향을 받았지만, 다양한 클라이언트가 운영 중이었기에 네트워크는 정상적으로 작동했다.
+
+### Execution Clients
+
+| 클라이언트 | 언어 | 특징 | 점유율 (추정) |
+|-----------|------|------|--------------|
+| **Geth** | Go | 가장 오래되고 안정적, 레퍼런스 구현 | 40-50% |
+| **Nethermind** | C# | 빠른 동기화, 플러그인 시스템 | 25-38% |
+| **Besu** | Java | 엔터프라이즈 친화적, 권한형 네트워크 지원 | 9-16% |
+| **Erigon** | Go | 디스크 효율적, 아카이브 노드에 최적화 | 3-7% |
+| **Reth** | Rust | 최신, 고성능, 빠르게 성장 중 | 2-8% |
+
+Geth의 점유율이 여전히 높지만, 과거 80% 이상이던 시절에 비하면 상당히 개선되었다. Nethermind와 Besu의 성장, 그리고 Reth의 등장으로 다양성이 확보되고 있다.
+
+### Consensus Clients
+
+| 클라이언트 | 언어 | 특징 | 점유율 (추정) |
+|-----------|------|------|--------------|
+| **Lighthouse** | Rust | 보안 중심, Sigma Prime 개발 | 20-21% |
+| **Prysm** | Go | 문서화 우수, Offchain Labs 개발 | 21% |
+| **Teku** | Java | 기관용, ConsenSys 개발, API 풍부 | 14-54%* |
+| **Nimbus** | Nim | 경량, 라즈베리파이에서도 실행 가능 | 3% |
+| **Lodestar** | TypeScript | JavaScript 생태계 호환 | 0.5% |
+
+*Teku의 점유율은 측정 방법에 따라 차이가 크다.
+
+CL 클라이언트는 EL에 비해 다양성이 잘 유지되고 있다. Lighthouse, Prysm, Teku가 비교적 고르게 분포되어 있어 단일 클라이언트 장애에 대한 내성이 높다.
+
+### 클라이언트 조합
+
+EL과 CL 클라이언트는 자유롭게 조합할 수 있다.
+
+- **Geth + Lighthouse**: 안정성을 중시하는 보수적 선택
+- **Nethermind + Prysm**: Go 기반 CL과 .NET 기반 EL의 조합
+- **Reth + Lighthouse**: 성능과 보안을 모두 중시하는 Rust 조합
+- **Besu + Teku**: ConsenSys 스택, 엔터프라이즈 환경에 적합
+
+다양성을 위해서는 현재 점유율이 낮은 클라이언트 조합을 선택하는 것이 네트워크 전체에 도움이 된다.
+
+## 노드 구성과 실행
+
+실제로 이더리움 노드를 운영하려면 EL 클라이언트와 CL 클라이언트를 함께 실행해야 한다.
+
+### 하드웨어 요구사항
+
+| 구분 | 최소 | 권장 |
+|------|------|------|
+| CPU | 4코어 | 8코어 이상 |
+| RAM | 16GB | 32GB |
+| 스토리지 | 2TB SSD | 4TB NVMe SSD |
+| 네트워크 | 25Mbps | 100Mbps 이상 |
+
+스토리지 요구사항은 계속 증가하고 있으며, snap sync를 사용하면 초기 동기화 시간을 크게 줄일 수 있다.
+
+### JWT 인증
+
+EL과 CL은 Engine API로 통신하는데, 이 통신을 보호하기 위해 JWT(JSON Web Token) 인증을 사용한다. 두 클라이언트가 같은 JWT secret 파일을 공유해야 한다.
+
+```bash
+# JWT secret 생성
+openssl rand -hex 32 > /path/to/jwt.hex
+```
+
+### 실행 예시 (Geth + Lighthouse)
+
+```bash
+# 1. Geth (Execution Layer) 실행
+geth \
+  --mainnet \
+  --http \
+  --http.api eth,net,engine,admin \
+  --authrpc.addr localhost \
+  --authrpc.port 8551 \
+  --authrpc.vhosts localhost \
+  --authrpc.jwtsecret /path/to/jwt.hex \
+  --datadir /path/to/geth-data
+
+# 2. Lighthouse (Consensus Layer) 실행
+lighthouse bn \
+  --network mainnet \
+  --execution-endpoint http://localhost:8551 \
+  --execution-jwt /path/to/jwt.hex \
+  --checkpoint-sync-url https://beaconstate.ethstaker.cc \
+  --datadir /path/to/lighthouse-data
+```
+
+`--checkpoint-sync-url` 옵션을 사용하면 genesis부터 동기화하지 않고 최근 finalized checkpoint에서 시작할 수 있어 동기화 시간이 대폭 단축된다.
+
+## 정리
+
+The Merge 이후 이더리움은 Execution Layer와 Consensus Layer로 분리된 이중 레이어 구조를 갖추게 되었다.
+
+- **Execution Layer:** 트랜잭션 실행, 상태 관리, EVM 운영
+- **Consensus Layer:** PoS 합의, validator 관리, finality 결정
+- **Engine API:** 두 레이어 간의 로컬 통신 인터페이스
+
+이 분리 덕분에 각 레이어에 특화된 다양한 클라이언트가 등장했고, 클라이언트 다양성은 이더리움 네트워크의 핵심 보안 요소가 되었다. 단일 클라이언트 버그로 인한 네트워크 장애 위험을 줄이기 위해, 모든 클라이언트가 33% 미만의 점유율을 유지하는 것이 이상적이다.
+
+[다음 글](./02-transaction-lifecycle.mdx)에서는 사용자가 생성한 트랜잭션이 어떻게 서명되고, P2P 네트워크를 통해 전파되어 mempool에 도달하는지 살펴본다.
+
+## 참조
+
+- [Client Diversity](https://clientdiversity.org/)
+- [Ethereum.org - Client Diversity](https://ethereum.org/developers/docs/nodes-and-clients/client-diversity/)
+- [Engine API Specification](https://github.com/ethereum/execution-apis/blob/main/src/engine/common.md)
+- [Engine API: A Visual Guide](https://hackmd.io/@danielrachi/engine_api)
+- [Alchemy - Execution Layer and Consensus Layer](https://www.alchemy.com/overviews/execution-layer-and-consensus-layer-node-clients)
