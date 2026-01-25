@@ -717,8 +717,6 @@ pruning은 디스크 공간을 절약하기 위해 최근 128개 블록의 상�
 
 ## 정리
 
-트랜잭션 실행과 상태 관리의 전체 흐름을 요약한다.
-
 1. **블록 빌딩:** mempool에서 트랜잭션 선택, effective gas price 순 정렬
 2. **트랜잭션 실행:** StateTransition 과정, 가스 선차감 → EVM 실행 → 상태 변경
 3. **EVM:** 스택 기반 머신, Stack/Memory/Storage/Calldata 메모리 모델
