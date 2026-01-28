@@ -1,0 +1,779 @@
+---
+title: Threshold Signature Scheme (TSS)
+description: A distributed multi-party computation approach for secure digital signatures without single points of failure
+keywords:
+  [
+    TSS,
+    threshold signature,
+    MPC,
+    distributed key generation,
+    DKG,
+    ECDSA,
+    Cait-Sith,
+    Beaver Triple,
+    blockchain,
+    wallet,
+  ]
+tags: [Cryptography, Blockchain]
+sidebar_position: 5
+---
+
+# Threshold Signature Scheme (TSS)
+
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+## SSS의 한계
+
+[이전 글](/blockchain/cryptography/shamir-secret-sharing)에서 Shamir's Secret Sharing(SSS)을 통해 비밀을 여러 조각으로 분산하여 보관하는 방법을 살펴보았다. SSS는 단일 실패 지점 문제를 해결하는 훌륭한 기법이지만, 실제 서명 과정에서는 근본적인 한계가 존재한다.
+
+### 생성과 복원 시점의 취약성
+
+SSS의 구조적 한계는 비밀의 생성과 복원 시점에서 드러난다.
+
+- **생성 시점**: 딜러(Dealer)가 전체 비밀을 알고 있는 상태에서 조각을 생성한다. 이 순간 딜러는 단일 실패 지점이 된다.
+- **복원 시점**: 서명을 생성하려면 k개의 조각을 모아 비밀을 재조합해야 한다. 재조합이 이루어지는 장치나 환경에서 전체 비밀이 노출된다.
+
+결국 SSS는 보관의 문제를 해결할 뿐, 사용의 문제를 해결하지 못한다. 아무리 안전하게 분산 보관해도, 서명을 위해 비밀을 한 곳에 모으는 순간 공격 지점이 발생한다.
+
+### SSS vs TSS
+
+| 특성 | SSS | TSS |
+|------|-----|-----|
+| **키 존재 여부** | 생성 시와 서명 시 전체 키가 한 곳에 존재 | 전체 키가 절대로 한 곳에 존재하지 않음 |
+| **딜러 필요** | 필요 (키를 분할하는 신뢰 기관) | 불필요 (분산 키 생성) |
+| **서명 방식** | 키 재조합 후 서명 | 분산 서명 (키 재조합 없음) |
+| **단일 실패 지점** | 존재 (키 생성/서명 시) | 없음 |
+
+**Threshold Signature Scheme(TSS)**은 이 한계를 근본적으로 해결한다. TSS에서는 개인키가 생성되는 순간부터 서명이 완료되는 순간까지, 전체 개인키가 한 곳에 존재하는 시점이 없다. 각 참여자는 자신의 조각만을 이용해 부분 서명을 생성하고, 이 부분 서명들이 합쳐져 완전한 서명이 된다.
+
+### (t, n) Threshold 구조
+
+TSS는 SSS와 마찬가지로 **(t, n) 임계값 구조**를 사용한다. n명의 참여자 중 t명 이상이 협력하면 서명을 생성할 수 있고, t명 미만으로는 서명이 불가능하다.
+
+이것이 가능한 이유는 **라그랑주 보간법** 덕분이다. SSS에서 비밀을 복원할 때와 동일한 수학적 원리를 사용한다.
+
+```
+개인키 x는 t-1차 다항식 f(x)의 y절편: x = f(0)
+각 참여자 i는 자신의 share xᵢ = f(i)를 보유
+
+t명이 모이면:
+- 라그랑주 보간으로 f(0)을 직접 복원하지 않고
+- 각자의 share를 이용해 "부분 서명"을 생성
+- 부분 서명들을 라그랑주 계수로 가중합하여 최종 서명 생성
+```
+
+핵심은 **개인키를 복원하지 않고도 서명을 생성**할 수 있다는 점이다. 라그랑주 보간의 선형성을 활용하여, 각 참여자가 자신의 share로 계산한 부분 결과를 합치면 전체 개인키로 계산한 것과 동일한 결과를 얻는다.
+
+## 왜 Threshold ECDSA가 어려운가?
+
+TSS의 개념은 단순해 보이지만, 실제 구현은 사용하는 서명 알고리즘에 따라 난이도가 크게 달라진다. 특히 블록체인에서 널리 사용되는 ECDSA는 Threshold 환경에서 구현하기가 까다롭다.
+
+### ECDSA 서명 공식의 구조
+
+[ECDSA](/blockchain/cryptography/ecdsa)의 서명 생성 공식을 다시 살펴보자.
+
+```
+s = k⁻¹ × (m + r × x) mod n
+```
+
+| 기호 | 의미 |
+|------|------|
+| `k` | 난수 (nonce) |
+| `m` | 메시지 해시 |
+| `r` | R = k × G의 x좌표 |
+| `x` | 개인키 |
+
+### 핵심 문제: k × x 곱셈
+
+Threshold 환경에서 개인키 `x`와 난수 `k`는 모두 여러 참여자에게 분산되어 있다.
+
+```
+x = x₁ + x₂ + x₃  (각 참여자가 xᵢ 보유)
+k = k₁ + k₂ + k₃  (각 참여자가 kᵢ 보유)
+```
+
+문제는 서명 공식에 `r × x` 항이 포함되어 있고, `k⁻¹`을 계산해야 한다는 점이다. `k × x`를 분산 환경에서 계산하려면 다음과 같은 전개가 필요하다.
+
+```
+k × x = (k₁ + k₂ + k₃) × (x₁ + x₂ + x₃)
+      = k₁x₁ + k₁x₂ + k₁x₃ + k₂x₁ + k₂x₂ + k₂x₃ + k₃x₁ + k₃x₂ + k₃x₃
+```
+
+각 참여자는 자신의 `kᵢ`와 `xᵢ`만 알고 있다. `kᵢxᵢ`는 각자 계산할 수 있지만, 교차항인 `kᵢxⱼ` (i ≠ j)를 계산하려면 다른 참여자의 비밀값이 필요하다. 그렇다고 비밀값을 직접 공유하면 개인키를 복구할 수 있게 되어 보안이 무너진다.
+
+### Schnorr 서명과의 비교
+
+Schnorr 서명의 공식은 다음과 같다.
+
+```
+s = k + e × x
+```
+
+덧셈과 스칼라 곱셈만으로 구성되어 있어 **선형 구조**를 가진다. 각 참여자가 `sᵢ = kᵢ + e × xᵢ`를 계산하면, 이를 모두 더해서 최종 서명을 얻을 수 있다. 교차항 문제가 발생하지 않는다.
+
+반면 ECDSA는 `k⁻¹`과 `k × x`를 포함하는 **비선형 구조**이다. 이 비선형성 때문에 Threshold ECDSA는 Threshold Schnorr보다 훨씬 복잡한 암호학적 기법을 필요로 한다.
+
+## 주요 Threshold Signature 프로토콜
+
+Threshold 서명을 구현하기 위한 다양한 프로토콜이 연구되어 왔다. 각 프로토콜은 지원하는 서명 알고리즘, 비밀 곱셈 문제를 해결하는 방식, 통신 라운드 수, 보안 모델 등에서 차이가 있다.
+
+### GG18/GG20 (Gennaro-Goldfeder)
+
+2018년과 2020년에 Gennaro와 Goldfeder가 발표한 프로토콜이다.
+
+**GG18**은 최초의 실용적인 Threshold ECDSA 프로토콜로 평가받는다. **Paillier 동형암호**를 기반으로 하며, **MtA(Multiplicative-to-Additive)** 프로토콜을 통해 비밀 곱셈 문제를 해결한다.
+
+#### Paillier 동형암호
+
+**동형암호(Homomorphic Encryption)**는 암호화된 상태에서 연산을 수행할 수 있는 암호 시스템이다. 일반적인 암호화에서는 데이터를 사용하려면 먼저 복호화해야 하지만, 동형암호에서는 암호문에 직접 연산을 수행하고, 그 결과를 복호화하면 평문에 연산한 것과 동일한 결과를 얻는다.
+
+1999년 Pascal Paillier가 제안한 Paillier 암호는 **가산 동형성(Additive Homomorphism)**을 가진다.
+
+```
+Enc(m₁) × Enc(m₂) = Enc(m₁ + m₂)  // 암호문의 곱 = 평문 합의 암호화
+Enc(m)^x = Enc(m × x)              // 암호문의 거듭제곱 = 평문 스칼라곱의 암호화
+```
+
+이 성질을 활용하면 암호화된 상태에서 덧셈과 스칼라 곱셈을 수행할 수 있다. 예를 들어, Alice가 `Enc(a)`를 Bob에게 보내면, Bob은 자신의 비밀 `b`를 이용해 `Enc(a)^b = Enc(a × b)`를 계산할 수 있다. Bob은 `a`를 모르고, Alice는 `b`를 모르지만, 둘의 곱에 대한 암호문이 생성된다.
+
+#### MtA (Multiplicative-to-Additive) 프로토콜
+
+MtA는 "곱셈 share를 덧셈 share로 변환"하는 프로토콜이다. 두 당사자 Alice와 Bob이 각자 비밀 `a`, `b`를 가지고 있을 때, 최종적으로 `A + B = a × b`를 만족하는 값 `A`와 `B`를 각자 얻는다.
+
+```
+Alice: a를 보유 → A를 획득
+Bob: b를 보유 → B를 획득
+결과: A + B = a × b (mod q)
+```
+
+이 과정에서 Alice는 `b`를 알지 못하고, Bob은 `a`를 알지 못한다. Paillier 암호의 동형 성질을 활용하여 이를 구현한다. Threshold ECDSA에서 `k × x` 곱셈을 분산 계산할 때 MtA가 핵심 역할을 한다.
+
+**GG20**은 GG18을 개선한 버전이다.
+
+- 서명 라운드 감소 (9 → 7라운드, 온라인 1라운드)
+- **Identifiable Abort** 지원: 프로토콜 실패 시 악의적 참여자를 식별할 수 있다.
+
+#### Identifiable Abort
+
+다자간 프로토콜에서 악의적인 참여자가 의도적으로 잘못된 값을 제출하여 프로토콜을 실패시킬 수 있다. **Identifiable Abort**는 이런 상황에서 "누가 잘못했는지" 식별할 수 있는 기능이다.
+
+이 기능이 없으면 프로토콜이 실패해도 원인을 알 수 없어, 악의적 참여자가 반복적으로 방해할 수 있다. Identifiable Abort가 있으면 문제를 일으킨 참여자를 제외하고 재시도할 수 있다. 다만 이 기능을 추가하면 프로토콜 복잡도와 통신 비용이 증가한다.
+
+### CGGMP21
+
+2021년 Canetti, Gennaro, Goldfeder, Makriyannis, Peled가 발표한 프로토콜이다.
+
+CGGMP21의 주요 특징은 다음과 같다.
+
+- GG20과 CMP20을 결합하여 UC 프레임워크 하에서 보안을 증명했다.
+- **Pre-signing** 기능을 제공하여 메시지가 확정되기 전에 대부분의 연산을 전처리할 수 있다.
+- 4라운드 변형과 7라운드 변형이 존재한다.
+- Identifiable Abort를 지원한다.
+
+#### Universal Composability (UC) 프레임워크
+
+**UC 프레임워크**는 암호 프로토콜의 보안을 분석하는 이론적 모델이다. 핵심 아이디어는 "이상적인 세계"와 "현실 세계"를 비교하는 것이다.
+
+- **이상적인 세계**: 완벽하게 신뢰할 수 있는 제3자가 모든 계산을 대신 수행
+- **현실 세계**: 실제 프로토콜이 참여자들 간의 통신으로 실행
+
+UC 보안이 증명되면, 현실 세계의 프로토콜이 이상적인 세계와 구분할 수 없을 정도로 안전하다는 것을 의미한다. 중요한 특성은 **합성 가능성(Composability)**이다. UC 보안이 증명된 프로토콜은 다른 프로토콜과 결합해도 보안이 유지된다. 복잡한 시스템에서 여러 암호 프로토콜을 함께 사용할 때 이 특성이 중요하다.
+
+### FROST
+
+**Flexible Round-Optimized Schnorr Threshold** 프로토콜이다. 2024년 6월 RFC 9591로 표준화되었다.
+
+#### Schnorr 서명의 선형성
+
+앞서 설명했듯이 Schnorr 서명은 `s = k + e × x` 형태로, 덧셈과 스칼라 곱셈만으로 구성된다. 이 **선형 구조** 덕분에 Threshold 환경에서 구현이 훨씬 단순하다.
+
+```
+참여자 1: s₁ = k₁ + e × x₁
+참여자 2: s₂ = k₂ + e × x₂
+참여자 3: s₃ = k₃ + e × x₃
+
+최종 서명: s = s₁ + s₂ + s₃ = (k₁+k₂+k₃) + e × (x₁+x₂+x₃) = k + e × x
+```
+
+각 참여자가 독립적으로 부분 서명을 계산하고, 이를 단순히 더하면 완전한 서명이 된다. ECDSA처럼 복잡한 비밀 곱셈 프로토콜이 필요 없다.
+
+- **2라운드** 서명으로 매우 효율적이다.
+- 비트코인의 Taproot 업그레이드 이후 Schnorr 서명이 지원되면서 활용도가 높아졌다.
+- ECDSA를 지원하지 않는 것이 한계이다. 이더리움 등 ECDSA 기반 체인에서는 사용할 수 없다.
+
+### DKLS23
+
+2023년 Doerner, Kondi, Lee, Shelat가 발표한 프로토콜이다.
+
+DKLS23의 주요 특징은 다음과 같다.
+
+- Paillier 암호 대신 OT를 사용하여 비밀 곱셈을 수행한다. Paillier는 큰 수(2048비트 이상)의 연산이 필요하지만, OT 기반 접근은 더 가벼운 연산으로 구현할 수 있다.
+- **3라운드** threshold ECDSA를 달성했다.
+- **악의적 다수(malicious majority)**에 대한 보안을 제공한다. 대부분의 프로토콜이 "정직한 다수"를 가정하는 것과 대조적이다.
+
+#### Oblivious Transfer (OT)
+
+**Oblivious Transfer**는 MPC의 기본 구성 요소 중 하나이다. 송신자가 여러 메시지를 가지고 있고, 수신자가 그 중 하나를 선택하여 받되, 송신자는 어떤 것이 선택되었는지 알 수 없고, 수신자는 선택하지 않은 메시지를 알 수 없는 프로토콜이다.
+
+**1-out-of-2 OT** 예시:
+```
+송신자: 두 메시지 (m₀, m₁) 보유
+수신자: 선택 비트 b ∈ {0, 1}
+
+결과:
+- 수신자: mᵦ만 획득 (m₁₋ᵦ는 알 수 없음)
+- 송신자: b를 알 수 없음
+```
+
+OT는 공개키 암호 기반으로 구현되어 비용이 크다. OT Extension은 적은 수의 기본 OT로 많은 OT를 효율적으로 생성하는 기법으로, 대칭키 암호만 사용하여 성능을 크게 향상시킨다.
+
+### 프로토콜 비교
+
+| 프로토콜 | 서명 알고리즘 | 기반 기술 | 서명 라운드 | Identifiable Abort |
+|----------|-------------|----------|-------------|-------------------|
+| GG18 | ECDSA | Paillier + MtA | 9 | ✗ |
+| GG20 | ECDSA | Paillier + MtA | 7 (온라인 1) | ✓ |
+| CGGMP21 | ECDSA | Paillier + MtA | 4 or 7 | ✓ |
+| FROST | Schnorr | - | 2 | ✓ |
+| DKLS23 | ECDSA | OT | 3 | ✓ |
+| Cait-Sith | ECDSA | Committed Beaver + OT | 1 (온라인) | ✗ |
+
+## Cait-Sith 프로토콜
+
+[Cait-Sith](https://github.com/cronokirby/cait-sith)는 **Committed Beaver Triple**과 **OT Extension**을 기반으로 한 Threshold ECDSA 프로토콜이다. 단순성과 성능을 강조하며, 특히 **키 무관 사전 처리(key-independent preprocessing)**라는 독특한 설계 철학을 가진다.
+
+### Beaver Triple: 비밀 곱셈의 핵심
+
+Cait-Sith가 `k × x` 곱셈 문제를 해결하는 핵심 기법은 **Beaver Triple**이다. 1991년 Donald Beaver가 제안한 이 기법은 MPC에서 비밀 곱셈을 수행하는 표준적인 방법 중 하나이다.
+
+#### Beaver Triple의 개념
+
+Beaver Triple은 다음 관계를 만족하는 세 값 `(a, b, c)`이다.
+
+```
+c = a × b
+```
+
+핵심은 이 값들이 **사전에 생성**되며, 각 참여자는 이 값들의 **조각(share)**만 보유한다는 점이다.
+
+```
+참여자 1: (a₁, b₁, c₁)
+참여자 2: (a₂, b₂, c₂)
+참여자 3: (a₃, b₃, c₃)
+
+단, a = a₁ + a₂ + a₃, b = b₁ + b₂ + b₃, c = c₁ + c₂ + c₃
+```
+
+#### Beaver Triple을 이용한 비밀 곱셈
+
+두 비밀값 `x`와 `y`의 곱 `[x × y]`를 계산하는 과정은 다음과 같다. (대괄호 `[]`는 값이 분산되어 있음을 의미)
+
+**1단계**: 각 참여자가 다음을 계산하여 **공개**한다.
+
+```
+d = x - a  (각 참여자가 dᵢ = xᵢ - aᵢ를 계산하여 합산)
+e = y - b  (각 참여자가 eᵢ = yᵢ - bᵢ를 계산하여 합산)
+```
+
+**2단계**: `d`와 `e`가 공개되어도 안전한 이유
+
+- `a`와 `b`는 완전히 랜덤한 값이다.
+- `d = x - a`만으로는 `x`를 알 수 없다. `a`를 모르기 때문이다.
+- 마찬가지로 `e = y - b`만으로는 `y`를 알 수 없다.
+
+**3단계**: 각 참여자가 `[x × y]`의 조각을 계산한다.
+
+```
+[x × y] = [c] + e×[a] + d×[b] + d×e
+```
+
+이 공식이 왜 성립하는지 수학적인 증명은 아래와 같다.
+
+```
+c + e×a + d×b + d×e
+= ab + (y-b)a + (x-a)b + (x-a)(y-b)
+= ab + ya - ab + xb - ab + xy - xb - ya + ab
+= xy  ✓
+```
+
+`d×e` 항은 공개값이므로 한 참여자만 더하면 된다. 나머지 항들은 각자의 조각을 이용해 계산할 수 있다.
+
+#### Committed Beaver Triple
+
+Cait-Sith는 일반 Beaver Triple에 **공개 커밋**을 추가한 **Committed Beaver Triple**을 사용한다.
+
+```
+비밀 share:  [a], [b], [c]
+공개 커밋:   A = a×G, B = b×G, C = c×G
+```
+
+커밋의 역할은 다음과 같다.
+
+- 참여자들이 올바른 Triple을 사용하는지 검증할 수 있다.
+- 악의적인 참여자가 잘못된 값을 주입하는 것을 방지한다.
+
+### 설계 철학
+
+Cait-Sith의 핵심 아이디어는 "가능한 한 많은 연산을 키와 무관한 사전 처리 단계로 옮기는 것"이다.
+
+- Triple 생성 시점에 어떤 키로 서명할지 알 필요가 없다.
+- 메시지가 확정되기 전에 Presign까지 완료할 수 있다.
+- 실제 서명 요청이 들어오면 즉시 완료할 수 있다.
+
+이 설계는 대량의 키를 관리하는 커스터디 서비스에 특히 유리하다. 백그라운드에서 Triple과 Presign을 미리 생성해두면, 사용자의 서명 요청에 즉각 응답할 수 있다.
+
+### 4단계 흐름
+
+Cait-Sith의 서명 과정은 4단계로 구성된다.
+
+```
+  ┌─────────┐     ┌────────────┐     ┌─────────┐     ┌────────┐
+  │  Setup  │ ──▶ │ Triple Gen │ ──▶ │ Presign │ ──▶ │  Sign  │
+  └─────────┘     └────────────┘     └─────────┘     └────────┘
+       │                │                 │               │
+       ▼                ▼                 ▼               ▼
+     1회 실행          키 무관           메시지 무관         즉시 완료
+
+  ◀───────── 백그라운드 사전 처리 ──────────▶    ◀── 실시간 ──▶
+```
+
+| 단계 | 설명 | 특징 |
+|------|------|------|
+| **Setup** | OT Extension을 위한 초기 설정 | 1회만 실행, 이후 무한한 Triple 생성 가능 |
+| **Triple Gen** | Committed Beaver Triple 생성 | 키와 무관, 서명당 2개 필요 |
+| **Presign** | 분산 난수 k와 R = k×G, σ = k×x 계산 | 메시지와 무관 |
+| **Sign** | 메시지 해시와 Presign 결과 조합 | 1라운드 통신, 즉시 완료 |
+
+### 각 단계 상세
+
+#### Setup
+
+참여자들 간의 OT Extension 채널을 설정한다. 앞서 DKLS23에서 설명한 것처럼, OT는 MPC의 기본 구성 요소이며, OT Extension을 통해 효율적으로 대량의 OT를 생성할 수 있다. Setup 단계에서 이 기반을 마련해두면 이후 Triple 생성이 효율적으로 이루어진다.
+
+#### Triple Generation
+
+Committed Beaver Triple `(a, b, c)`와 커밋 `(A, B, C)`를 생성한다.
+
+```
+비밀 share:  [a], [b], [c]  (c = a × b)
+공개 커밋:   A = a×G, B = b×G, C = c×G
+```
+
+각 참여자가 랜덤 `aᵢ`, `bᵢ`를 생성하고, OT Extension을 사용하여 `cᵢ`의 조각을 안전하게 계산한다. 이 단계가 연산량이 가장 많지만, 키와 무관하게 사전에 대량 생성해둘 수 있다.
+
+#### Presign
+
+메시지 없이 수행할 수 있는 서명의 전처리 단계이다.
+
+1. 분산 난수 `k` 생성 (각 참여자가 `kᵢ` 기여)
+2. `R = k × G` 계산 (공개 nonce point, r은 R의 x좌표)
+3. **핵심**: Beaver Triple을 사용하여 `σ = k × x` 계산
+
+`k × x` 계산이 가장 어려운 부분이다. 앞서 설명한 Beaver Triple 기법으로 `k`도 `x`도 노출되지 않으면서 곱셈을 수행한다.
+
+#### Sign
+
+메시지가 확정되면 최종 서명을 생성한다.
+
+```
+각 참여자: sᵢ = kᵢ × m + σᵢ × r
+최종 서명: s = Σsᵢ (라그랑주 보간 적용)
+```
+
+무거운 연산은 모두 Presign에서 완료되었으므로, Sign 단계에서는 단순 스칼라 연산만 수행한다. 네트워크 통신도 1라운드로 충분하다.
+
+### 주의사항
+
+#### Triple 재사용 금지
+
+Beaver Triple은 **절대로 재사용해서는 안 된다**. 재사용 시 개인키가 복구될 수 있다.
+
+```
+서명 1: d₁ = x - a,  e₁ = k₁ - b  공개
+서명 2: d₂ = x - a,  e₂ = k₂ - b  공개 (같은 Triple 재사용)
+
+d₁ - d₂ = 0  (x와 a가 동일하므로)
+→ 공격자가 "같은 Triple 사용됨"을 인지
+→ 두 서명의 관계식에서 x를 역산 가능
+```
+
+Triple은 "일회용 마스크"이다. 한 번 사용하면 `d = x - a`가 공개되므로, 같은 `a`를 다시 사용하면 마스킹 효과가 사라진다.
+
+## Distributed Key Generation (DKG)
+
+TSS의 또 다른 핵심 구성 요소는 **Distributed Key Generation(DKG)**이다. 신뢰할 수 있는 제3자 없이 분산된 방식으로 키 쌍을 생성한다.
+
+### DKG의 목표
+
+- 공개키 `P`를 모든 참여자가 합의한다.
+- 대응하는 개인키 `x`는 어떤 단일 참여자도 알지 못한다.
+- 각 참여자는 `x`의 조각 `xᵢ`만 보유한다.
+
+### SSS와의 관계: Feldman VSS
+
+DKG에서 키를 분산하는 방식은 SSS와 밀접한 관련이 있다. 정확히 말하면, **Feldman's Verifiable Secret Sharing(VSS)**을 사용하는데, 이는 SSS를 기반으로 **검증 가능성**을 추가한 것이다.
+
+**SSS의 한계**
+SSS에서 딜러가 share를 배포할 때, 수신자는 받은 share가 올바른지 검증할 방법이 없다. 악의적인 딜러가 일부 참여자에게 잘못된 share를 줄 수 있고, 이 경우 복원 시 엉뚱한 값이 나온다.
+
+**Feldman VSS의 해결책**
+
+Feldman VSS는 다항식의 계수에 대한 **커밋먼트**를 공개한다.
+
+```
+다항식: f(x) = s + a₁x + a₂x² + ... + aₖ₋₁xᵏ⁻¹
+커밋먼트: C₀ = s·G, C₁ = a₁·G, C₂ = a₂·G, ..., Cₖ₋₁ = aₖ₋₁·G
+```
+
+각 참여자 i는 자신의 share `f(i)`를 받은 후, 다음을 검증할 수 있다.
+
+```
+f(i)·G = C₀ + i·C₁ + i²·C₂ + ... + iᵏ⁻¹·Cₖ₋₁
+```
+
+이 검증이 통과하면 share가 공개된 커밋먼트와 일치하는 올바른 다항식에서 생성되었음을 확신할 수 있다.
+
+**DKG에서의 적용**
+
+DKG는 Feldman VSS를 확장하여 **딜러 없이** 키를 생성한다. 각 참여자가 자신만의 랜덤 다항식을 생성하고, 모든 참여자의 다항식을 합산하여 최종 키를 만든다.
+
+```
+참여자 1: f₁(x) = s₁ + a₁₁x + a₁₂x² + ...
+참여자 2: f₂(x) = s₂ + a₂₁x + a₂₂x² + ...
+참여자 3: f₃(x) = s₃ + a₃₁x + a₃₂x² + ...
+
+최종 다항식: F(x) = f₁(x) + f₂(x) + f₃(x)
+최종 비밀키: s = s₁ + s₂ + s₃ (아무도 이 값을 직접 알지 못함)
+참여자 i의 share: xᵢ = F(i) = f₁(i) + f₂(i) + f₃(i)
+```
+
+각 참여자는 다른 참여자로부터 받은 share의 합을 자신의 최종 share로 사용한다. 결과적으로 SSS와 동일한 수학적 구조(라그랑주 보간)를 사용하지만, 전체 비밀을 아는 딜러 없이 분산 방식으로 생성된다.
+
+### Keygen 메시지 흐름
+
+일반적인 DKG Keygen은 다음과 같은 라운드로 구성된다.
+
+```
+라운드 1: Commitment 교환
+  - 각 참여자가 자신의 다항식 계수에 대한 해시 H(F)를 브로드캐스트
+  - 나중에 값을 변경하는 것을 방지
+
+라운드 2: Confirmation 교환
+  - 모든 commitment의 해시 H(all)를 브로드캐스트
+  - 모두 같은 값을 받았는지 확인
+
+라운드 3: Polynomial + Proof 공유
+  - 다항식 F와 dlog 증명을 공개
+  - 정당성 검증
+
+라운드 4: Private Share 교환
+  - 각 참여자에게 f(participant_id)를 암호화하여 전달
+  - 이 값이 개인키 조각 xᵢ가 됨
+```
+
+### Key Refresh와 Key Resharing
+
+TSS의 장점 중 하나는 공개키(블록체인 주소)를 변경하지 않으면서도 내부 구조를 변경할 수 있다는 점이다.
+
+- **Key Refresh**: 동일한 참여자와 임계값을 유지하면서 share를 갱신한다. 이전 share가 유출되었더라도 새 share와 조합할 수 없다.
+- **Key Resharing**: 참여자 구성이나 임계값을 변경한다. 기존 임계값 이상의 참여자가 협력해야 한다.
+
+## TypeScript 구현
+
+Beaver Triple을 이용한 비밀 곱셈의 개념을 테스트 코드로 확인해보자.
+
+### 개요
+
+1. **Additive Secret Sharing**: 비밀값을 여러 참여자에게 분산한다. 모든 share의 합이 원래 비밀이 된다.
+2. **Beaver Triple 생성**: 사전에 `(a, b, c)` where `c = a × b`를 생성하고 share로 분산한다.
+3. **비밀 곱셈**: 두 비밀값 `x`, `y`의 곱을 각 참여자의 share만으로 계산한다.
+
+
+:::info 예제 코드
+전체 테스트 코드는 [crypto-examples/cryptography-examples/05-threshold-signature-scheme](https://github.com/chihunmanse/crypto-examples/tree/main/cryptography-examples/05-threshold-signature-scheme)에서 확인할 수 있다.
+:::
+
+```mdx-code-block
+<Tabs>
+<TabItem value="beaver-triple.ts">
+```
+
+```ts
+// Beaver Triple: Secret Multiplication without Revealing Secrets
+const PRIME = BigInt("170141183460469231731687303715884105727"); // 2^127 - 1
+
+// Modular arithmetic
+function mod(n: bigint): bigint {
+  return ((n % PRIME) + PRIME) % PRIME;
+}
+
+// Additive secret sharing: split a secret into n shares
+// secret = share_1 + share_2 + ... + share_n (mod PRIME)
+function additiveShare(secret: bigint, n: number): bigint[] {
+  const shares: bigint[] = [];
+  let sum = BigInt(0);
+
+  for (let i = 0; i < n - 1; i++) {
+    const share = randomBigInt(PRIME);
+    shares.push(share);
+    sum = mod(sum + share);
+  }
+
+  // Last share ensures sum equals secret
+  shares.push(mod(secret - sum));
+  return shares;
+}
+
+// Reconstruct secret from additive shares
+function reconstructAdditive(shares: bigint[]): bigint {
+  return shares.reduce((sum, share) => mod(sum + share), BigInt(0));
+}
+
+// Beaver Triple: (a, b, c) where c = a * b
+interface BeaverTriple {
+  a: bigint;
+  b: bigint;
+  c: bigint;
+}
+
+// Generate Beaver Triple and distribute shares
+function generateBeaverTriple(n: number): {
+  triple: BeaverTriple;
+  shares: { aShares: bigint[]; bShares: bigint[]; cShares: bigint[] };
+} {
+  const a = randomBigInt(PRIME);
+  const b = randomBigInt(PRIME);
+  const c = mod(a * b);
+
+  return {
+    triple: { a, b, c },
+    shares: {
+      aShares: additiveShare(a, n),
+      bShares: additiveShare(b, n),
+      cShares: additiveShare(c, n),
+    },
+  };
+}
+
+// Secret multiplication using Beaver Triple
+// Goal: compute [x * y] without revealing x or y
+function secretMultiplication(
+  xShares: bigint[],
+  yShares: bigint[],
+  tripleShares: { aShares: bigint[]; bShares: bigint[]; cShares: bigint[] }
+): { resultShares: bigint[]; publicD: bigint; publicE: bigint } {
+  const n = xShares.length;
+  const { aShares, bShares, cShares } = tripleShares;
+
+  // Step 1: Compute and broadcast d = x - a, e = y - b
+  const dShares = xShares.map((xi, i) => mod(xi - aShares[i]));
+  const eShares = yShares.map((yi, i) => mod(yi - bShares[i]));
+
+  const d = reconstructAdditive(dShares);
+  const e = reconstructAdditive(eShares);
+
+  // Step 2: Compute [x * y] = [c] + e*[a] + d*[b] + d*e
+  const resultShares = cShares.map((ci, i) => {
+    let share = mod(ci + mod(e * aShares[i]) + mod(d * bShares[i]));
+    if (i === 0) share = mod(share + mod(d * e)); // Only one participant adds d*e
+    return share;
+  });
+
+  return { resultShares, publicD: d, publicE: e };
+}
+```
+
+```mdx-code-block
+</TabItem>
+<TabItem value="beaver-triple.test.ts">
+```
+
+```ts
+import {
+  additiveShare,
+  reconstructAdditive,
+  generateBeaverTriple,
+  secretMultiplication,
+} from "./beaver-triple";
+
+export function runBeaverTripleTests() {
+  console.log("=== Beaver Triple: Secret Multiplication Test ===\n");
+
+  const n = 3; // 3 participants
+
+  // Secrets to multiply (simulating private key x and nonce k)
+  const x = BigInt(123456789); // "private key"
+  const y = BigInt(987654321); // "nonce k"
+  const expectedProduct = mod(x * y);
+
+  console.log(`Secret x (private key): ${x}`);
+  console.log(`Secret y (nonce k): ${y}`);
+  console.log(`Expected x * y: ${expectedProduct}\n`);
+
+  // Step 1: Split secrets into additive shares
+  const xShares = additiveShare(x, n);
+  const yShares = additiveShare(y, n);
+
+  // Step 2: Generate Beaver Triple
+  const { triple, shares: tripleShares } = generateBeaverTriple(n);
+  console.log(`Triple: c = a * b = ${triple.c}`);
+  console.log(`Verify: ${triple.c === mod(triple.a * triple.b)}\n`);
+
+  // Step 3: Secret multiplication using Beaver Triple
+  const { resultShares, publicD, publicE } = secretMultiplication(
+    xShares,
+    yShares,
+    tripleShares
+  );
+
+  console.log(`Public d = x - a: ${publicD}`);
+  console.log(`Public e = y - b: ${publicE}`);
+  console.log("d and e are safe to reveal (a, b are random)\n");
+
+  const computedProduct = reconstructAdditive(resultShares);
+  console.log(`Computed x * y: ${computedProduct}`);
+  console.log(`Expected x * y: ${expectedProduct}`);
+  console.log(`Success: ${computedProduct === expectedProduct}`);
+}
+```
+
+```mdx-code-block
+</TabItem>
+</Tabs>
+```
+
+위 테스트 코드를 실행하면 다음과 같은 결과를 확인할 수 있다.
+
+```shell
+=== Beaver Triple: Secret Multiplication Test ===
+
+Secret x (private key): 123456789
+Secret y (nonce k): 987654321
+Expected x * y: 121932631112635269
+Number of participants: 3
+
+--- Step 1: Split secrets into additive shares ---
+x shares (sum = x):
+  Participant 1: 158951332274000706256645552694561396184
+  Participant 2: 21671532207816538632489780162699830399
+  Participant 3: 159659502439121218574239274574630441660
+  Reconstructed x: 123456789
+
+--- Step 2: Generate Beaver Triple (a, b, c) where c = a*b ---
+Triple: a=116616167988215653003297630462272816546, b=70085026575726519533589340871607742737
+c = a * b = 133462244398343055172723199779951026134
+Verify c == a*b: true
+
+--- Step 3: Secret multiplication using Beaver Triple ---
+Public d = x - a: 53525015472253578728389673253734745970
+Public e = y - b: 100056156884742712198097962845264017311
+
+Note: d and e are safe to reveal because a and b are random.
+Knowing d = x - a doesn't reveal x without knowing a.
+
+Result shares [x * y]:
+  Participant 1: 53238482308233891691171247053917083607
+  Participant 2: 57099928044243123229254703639414263009
+  Participant 3: 59802773107992216811383285653665394380
+
+Reconstructed x * y: 121932631112635269
+Expected x * y: 121932631112635269
+Success: true
+
+--- Key Insight ---
+Throughout this process:
+  - No participant learned the full value of x or y
+  - Only d = x - a and e = y - b were revealed publicly
+  - Since a and b are random, d and e reveal nothing about x and y
+  - Yet we computed shares of x * y correctly!
+
+This is how Threshold ECDSA computes k * x without exposing either value.
+```
+
+### 실행 결과 분석
+
+#### Step 1: Additive Secret Sharing
+
+```
+x shares (sum = x):
+  Participant 1: 158951332274000706256645552694561396184
+  Participant 2: 21671532207816538632489780162699830399
+  Participant 3: 159659502439121218574239274574630441660
+  Reconstructed x: 123456789
+```
+
+비밀값 `x = 123456789`를 3개의 share로 분할했다. 각 share는 128비트 크기의 큰 수이다. 개별 share만 보면 원래 비밀에 대한 정보를 전혀 얻을 수 없다. 세 share를 모두 더하면(mod PRIME) 정확히 `123456789`가 복원된다.
+
+이 예제에서는 Additive Sharing을 사용했지만, 실제 TSS에서는 (t, n) threshold 구조를 위해 Shamir shares를 사용한다. 서명 시점에 참여하는 t명이 각자의 share에 라그랑주 계수를 곱하면 Additive 구조로 변환되어 동일한 연산이 적용된다.
+
+#### Step 2: Beaver Triple 생성
+
+```
+Triple: a=116616167988215653003297630462272816546, b=70085026575726519533589340871607742737
+c = a * b = 133462244398343055172723199779951026134
+Verify c == a*b: true
+```
+
+랜덤한 `a`와 `b`를 생성하고, 그 곱 `c = a × b`를 미리 계산해둔다. 이 Triple은 **비밀 곱셈에 사용될 "일회용 마스크"**라고 생각하면 된다. 실제 TSS에서는 OT Extension을 통해 `a`, `b`, `c` 각각을 share 형태로 생성하여 어떤 참여자도 전체 Triple을 알지 못하게 한다.
+
+#### Step 3: 비밀 곱셈
+
+```
+Public d = x - a: 53525015472253578728389673253734745970
+Public e = y - b: 100056156884742712198097962845264017311
+```
+
+각 참여자가 `dᵢ = xᵢ - aᵢ`와 `eᵢ = yᵢ - bᵢ`를 계산하여 브로드캐스트한다. 모든 참여자가 이를 합산하면 `d = x - a`와 `e = y - b`를 얻는다.
+
+**왜 d와 e를 공개해도 안전한가?**
+
+`a`와 `b`는 완전히 랜덤한 값이다. `d = x - a`를 알아도 `a`를 모르면 `x`를 알 수 없다. 이는 **One-Time Pad**와 동일한 원리이다. 랜덤 마스크로 원본을 숨기면, 마스크를 모르는 한 원본을 복구할 수 없다.
+
+```
+Result shares [x * y]:
+  Participant 1: 53238482308233891691171247053917083607
+  Participant 2: 57099928044243123229254703639414263009
+  Participant 3: 59802773107992216811383285653665394380
+
+Reconstructed x * y: 121932631112635269
+Expected x * y: 121932631112635269
+Success: true
+```
+
+각 참여자는 공식 `[x × y] = [c] + e×[a] + d×[b] + d×e`를 사용하여 결과의 share를 계산한다. `d`, `e`는 공개값이고, `[a]`, `[b]`, `[c]`는 각자의 share이다. 참여자 0만 `d×e` 항을 추가하여 중복 계산을 방지한다.
+
+세 결과 share를 합산하면 `121932631112635269`가 나오고, 이는 `123456789 × 987654321`의 정확한 값이다.
+
+## 정리
+
+Threshold Signature Scheme은 비밀 분산 서명을 통해 단일 실패 지점을 제거하는 암호학적 기법이다.
+
+### 핵심 요약
+
+- **SSS vs TSS**: SSS는 보관의 문제를, TSS는 사용(서명)의 문제까지 해결한다. TSS에서는 개인키가 생성부터 서명까지 어느 시점에도 한 곳에 존재하지 않는다.
+- **(t, n) Threshold 구조**: n명 중 t명 이상이 협력하면 서명이 가능하다. 라그랑주 보간을 통해 개인키를 복원하지 않고 부분 서명을 합성한다.
+- **DKG (Distributed Key Generation)**: 신뢰할 수 있는 딜러 없이 분산 방식으로 키를 생성한다. Feldman VSS를 통해 각 참여자가 받은 share의 정당성을 검증할 수 있다.
+- **Key Refresh/Resharing**: 공개키(블록체인 주소)를 변경하지 않고 share를 갱신하거나 참여자 구성을 변경할 수 있다.
+- **ECDSA의 어려움**: 서명 공식의 `k × x` 곱셈이 비선형이라 Paillier 동형암호, MtA, Beaver Triple, OT 등 복잡한 기법이 필요하다.
+
+### SSS vs TSS vs Multi-sig
+
+| 특성 | SSS | TSS | Multi-sig |
+|------|-----|-----|-----------|
+| 서명 시 키 재조합 | 필요 | 불필요 | 해당 없음 |
+| 단일 실패 지점 | 있음 | 없음 | 없음 |
+| 온체인 비용 | 표준 | 표준 | 높음 |
+| 체인 호환성 | 모든 체인 | 모든 체인 | 제한적 |
+| 프라이버시 | 높음 | 높음 | 낮음 |
+| 구현 복잡도 | 낮음 | 높음 | 중간 |
+
+### 참고 자료
+
+- [Cait-Sith GitHub](https://github.com/cronokirby/cait-sith)
+- [Cait-Sith Security Notes](https://cronokirby.com/Notes/index.html)
+- [GG20 Paper - One Round Threshold ECDSA](https://eprint.iacr.org/2020/540.pdf)
+- [RFC 9591 - FROST Protocol](https://datatracker.ietf.org/doc/rfc9591/)
+- [DKLS23 Paper - Threshold ECDSA in Three Rounds](https://eprint.iacr.org/2023/765.pdf)
+- [Web3Auth - SSS vs TSS Explained](https://blog.web3auth.io/shamirs-secret-sharing-sss-vs-threshold-signature-scheme-tss-explained/)
+- [Verichains - TSSHOCK](https://verichains.io/tsshock/)
